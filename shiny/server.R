@@ -1,7 +1,4 @@
-library(shiny)
-library(tidyverse)
-library(janitor)
-library(ggmaps)
+
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
