@@ -174,70 +174,9 @@ ada_request_2020 <- clean_ada_request(ada_request_2020)
 
 ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
 
-# TODO: Parse the request reasons. Add the other considerations.
+# TODO: Parse the request reasons. Add in the other acc type + req reasons.
+# TODO: Clean & merge the transfer data + HUD exit data.
 
 
 ```
-
-```{r x}
-
-    # TODO: parse req_reason, other_acc_type & other_req_reason
-    # don't make the optimistic assumption about transfer that allan did
-     if("comfort_animal_within_placement_unit" %in% colnames(x)) {
-    rename(assistance_animal_within_placement_unit = comfort_animal_within_placement_unit)
-  }
-
-  if("scattered_site_placement_unit" %in% colnames(x)) {
-    rename(scattered_site_placement_unit_co_housing_unit = scattered_site_placement_unit)
-  }
-  
-  x %>%
-    
- # create new columns to express each accommodation as 1 or 0, use regex? use a function?
-    mutate(req_a_anim = if_else(a == "Comfort Animal within Placement Unit" |
-                                b == "Comfort Animal within Placement Unit" |
-                                c == "Comfort Animal within Placement Unit" |
-                                d == "Comfort Animal within Placement Unit", 1, 0)) %>%
-    mutate(req_a_care = if_else(a == "Assigned Caretaker / Temporary Non-EA Household Member" |
-                                b == "Assigned Caretaker / Temporary Non-EA Household Member" |
-                                c == "Assigned Caretaker / Temporary Non-EA Household Member" |
-                                d == "Assigned Caretaker / Temporary Non-EA Household Member", 1, 0)) %>%
-    mutate(req_a_creg = if_else(a == "Change in EA Regulation / Re-Housing Plan" |
-                                b == "Change in EA Regulation / Re-Housing Plan" |
-                                c == "Change in EA Regulation / Re-Housing Plan" |
-                                d == "Change in EA Regulation / Re-Housing Plan", 1, 0)) %>%
-    mutate(req_a_cook = if_else(a == "Access to Full Cooking Facilities" |
-                                b == "Access to Full Cooking Facilities" |
-                                c == "Access to Full Cooking Facilities" |
-                                d == "Access to Full Cooking Facilities", 1, 0)) %>%
-    mutate(req_a_ffloor = if_else(a == "First Floor or Elevator Access" |
-                                b == "First Floor or Elevator Access" |
-                                c == "First Floor or Elevator Access" |
-                                d == "First Floor or Elevator Access", 1, 0)) %>%
-    mutate(req_a_ncarp = if_else(a == "Non Carpeted Placement Unit" |
-                                b == "Non Carpeted Placement Unit" |
-                                c == "Non Carpeted Placement Unit" |
-                                d == "Non Carpeted Placement Unit", 1, 0)) %>%
-    mutate(req_a_pmod = if_else(a == "Physical Modification to Placement Unit (visual cues for hearing impaired, grab bars in shower, etc.)" |
-                                b == "Physical Modification to Placement Unit (visual cues for hearing impaired, grab bars in shower, etc.)" |
-                                c == "Physical Modification to Placement Unit (visual cues for hearing impaired, grab bars in shower, etc.)" |
-                                d == "Physical Modification to Placement Unit (visual cues for hearing impaired, grab bars in shower, etc.)", 1, 0)) %>%
-    mutate(req_a_scat = if_else(a == "Scattered Site Placement Unit" |
-                                b == "Scattered Site Placement Unit" |
-                                c == "Scattered Site Placement Unit" |
-                                d == "Scattered Site Placement Unit", 1, 0)) %>%
-    mutate(req_a_serv = if_else(a == "Placement Unit Close to Service Providers (when a participant is placed out of area away from their current medical providers)" |
-                                b == "Placement Unit Close to Service Providers (when a participant is placed out of area away from their current medical providers)" |
-                                c == "Placement Unit Close to Service Providers (when a participant is placed out of area away from their current medical providers)" |
-                                d == "Placement Unit Close to Service Providers (when a participant is placed out of area away from their current medical providers)", 1, 0)) %>%
-    mutate(req_a_wchair = if_else(a == "Wheelchair Accessible Placement Unit" |
-                                b == "Wheelchair Accessible Placement Unit" |
-                                c == "Wheelchair Accessible Placement Unit" |
-                                d == "Wheelchair Accessible Placement Unit", 1, 0)) %>%
-    mutate(req_a_oth = if_else(a == "Other" |
-                                b == "Other" |
-                                c == "Other" |
-                                d == "Other", 1, 0)) 
-```
-
 
