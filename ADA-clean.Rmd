@@ -15,13 +15,13 @@ library(janitor)
 ```
 
 
-```{r old data}
+```{r claudia data}
 
-old_data <- 
+claudia_data <- 
   read_excel("old_data/2018_transfers_and_approved_ADAs.xlsx") %>%
   clean_names()
 
-clean_old_data <- old_data %>%
+clean_claudia_data <- claudia_data %>%
   select(-c(s_t_0_24:other_2)) %>%
   rename(id = personalid,
          name = ada_request_data_name,
@@ -42,18 +42,53 @@ clean_old_data <- old_data %>%
 
 ```{r 2015-2019 ADA request data}
 
-clean_ada_request <- function(file) {
-  x <- read_excel(file) %>%
+ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
+  
+  # Clean column names, drop unnecessary columns and correct one column name.
+  
+  clean_names() %>%
+  select(-c("ada_request_data_name", "touch_point_name_111")) %>%
+  rename(if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223 = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_w) 
+  
+
+ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
+  
+  # Clean column names, drop unnecessary columns and correct column order.
+  
+  clean_names() %>%
+  mutate(if_the_ada_request_occurred_in_the_hotel_motel_please_indicate = NA) %>%
+  mutate(if_other_ada_accomodation_requested_please_describe_3226 = NA) %>%
+  select(participant_enterprise_identifier, 
+         date_taken_111, 
+         where_did_the_ada_request_occur_3211,
+         if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223,
+         if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
+         date_that_the_central_ada_coordinator_received_ada_request_3212,
+         ada_accommodation_request_3213,
+         if_other_ada_accomodation_requested_please_describe_3226,
+         reason_for_the_ada_request_3214,
+         if_other_reason_please_describe_3227,
+         date_the_decision_made_3215,
+         was_the_ada_request_approved_3216,
+         if_partial_please_explain_3217,
+         if_closed_please_explain_3219,
+         was_the_accommodations_met_3218,
+         how_was_the_accommodation_met_3221,
+         date_the_accommodation_met_3220) 
+
+# Takes in a ADA request tibble that has already been filtered to the 
+# correct columns. This function renames the columns and eliminates 
+# the hyphens from the pei. 
+
+clean_ada_request <- function(x) {
+  x <- x %>%
     
-    # anonymize data
-    clean_names() %>%
-    select(-c("ada_request_data_name", "touch_point_name_111")) %>%
+    # Rename columns.
     
-    # rename columns
     rename(pei = participant_enterprise_identifier,
            date_taken = date_taken_111,
            req_where = where_did_the_ada_request_occur_3211,
-           shelter_from = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_w,
+           shelter_from = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223,
            hotel_from = if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
            date_received = date_that_the_central_ada_coordinator_received_ada_request_3212,
            acc_type = ada_accommodation_request_3213,
@@ -68,17 +103,91 @@ clean_ada_request <- function(file) {
            how_acc_met = how_was_the_accommodation_met_3221,
            date_acc_met = date_the_accommodation_met_3220) %>%
     
-    # eliminate hyphens from pei
+    # Eliminate hyphens from the PEI identification number.
+    
     mutate(pei = gsub("-", "", pei)) %>%
+    
+    # No more than 4 accommodations are provided to any one row. So, I divide the
+    # request column into four columns, based on the "\\|" divider.
+    
+    separate(acc_type, into = c("a", "b", "c", "d"), sep = "\\|") %>%
+    
+    # I want to collapse these four columns into "tidy" format, where each row
+    # represents a unique request made. So, I pivot the data to make it longer.
+    
+    pivot_longer(cols = c(a, b, c, d), names_to = "letter_id",  values_to = "accommodation_request") %>%
+    
+    # If any of the columns c(a, b, c, d) were empty before I pivoted longer, then
+    # an "NA" value will appear. Additionally, I notice that some cells seem to
+    # just contain an empty space (likely due to data entry errors). So, I drop
+    # the NAs and remove the cells that are just empty spaces.
+    
+    drop_na(accommodation_request) %>%
+    filter(accommodation_request != "") %>%
+    
+    # Now, I want to make the data wider again, where 1 represents that a given
+    # category of accommodations was requested. I create a dummy variable '1',
+    # which is just a column of 1s.
+    mutate(dummy = 1) %>%
+  
+    # Finally, I pivot wider again. The names of the columns in my wider table
+    # will be the values currently in the 'accommodation_request' column. The
+    # values in those columns will be either "NULL" if the category is not
+    # relevant, or 1 if the category was requested in that case.
+    
+    pivot_wider(id_cols = pei:date_acc_met, names_from = accommodation_request, values_from = dummy) %>%
+    
+    clean_names() %>%
+    
+    # Rename accommodation types.
+    
+    rename_with(~ gsub("comfort", "assistance", .x, fixed = TRUE)) %>%
+    rename_with(~ gsub("scattered_site_placement_unit_co_housing_unit", "scattered_site_placement_unit", .x, fixed = TRUE)) %>%
+    rename(req_a_anim = assistance_animal_within_placement_unit) %>% 
+    rename(req_a_care = assigned_caretaker_temporary_non_ea_household_member) %>%
+    rename(req_a_creg = change_in_ea_regulation_re_housing_plan) %>%
+    rename(req_a_cook = access_to_full_cooking_facilities) %>%
+    rename(req_a_ffloor = first_floor_or_elevator_access) %>%
+    rename(req_a_ncarp = non_carpeted_placement_unit) %>%
+    rename(req_a_pmod = physical_modification_to_placement_unit_visual_cues_for_hearing_impaired_grab_bars_in_shower_etc) %>% 
+    rename(req_a_scat = scattered_site_placement_unit) %>%  
+    rename(req_a_serv = placement_unit_close_to_service_providers_when_a_participant_is_placed_out_of_area_away_from_their_current_medical_providers) %>%
+    rename(req_a_wchair = wheelchair_accessible_placement_unit) %>%
+    rename(req_a_oth = other) %>%
+    
+    # Replace all NA values with 0.
+    
+    replace_na(list(req_a_anim = 0, req_a_care = 0, req_a_creg = 0, req_a_cook = 0, req_a_ffloor = 0, req_a_ncarp = 0, req_a_pmod = 0, req_a_scat = 0, req_a_serv = 0, req_a_wchair = 0, req_a_oth = 0)) %>%
+    
+    # Re-order columns to allow for correct row binding.
+    
+    select(pei:date_acc_met, req_a_anim, req_a_care, req_a_creg, req_a_cook, req_a_ffloor, req_a_ncarp, req_a_pmod, req_a_scat, req_a_serv, req_a_wchair, req_a_oth) 
+    
+  }
 
-    # no one requests more than 4 accommodations, parse accommodation type
-    separate(col = acc_type, into = c("a", "b", "c", "d"), sep = "\\|", remove = TRUE) %>%
+ada_request_2018 <- clean_ada_request(ada_request_2018)
+ada_request_2020 <- clean_ada_request(ada_request_2020)
+
+ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
+
+
+```
+
+```{r x}
+
+    # TODO: parse req_reason, other_acc_type & other_req_reason
+    # don't make the optimistic assumption about transfer that allan did
+     if("comfort_animal_within_placement_unit" %in% colnames(x)) {
+    rename(assistance_animal_within_placement_unit = comfort_animal_within_placement_unit)
+  }
+
+  if("scattered_site_placement_unit" %in% colnames(x)) {
+    rename(scattered_site_placement_unit_co_housing_unit = scattered_site_placement_unit)
+  }
+  
+  x %>%
     
-    # no one requests more than 3 accommodations
-    # TODO: finish other_acc_type, parse req_reason and other_req_reason, write a function?
-    separate(col = other_acc_type, into = c("e", "f", "g"), sep = "\\|", remove = TRUE) %>%
-    
-    # create new columns to express each accommodation as 1 or 0, use regex? use a function?
+ # create new columns to express each accommodation as 1 or 0, use regex? use a function?
     mutate(req_a_anim = if_else(a == "Comfort Animal within Placement Unit" |
                                 b == "Comfort Animal within Placement Unit" |
                                 c == "Comfort Animal within Placement Unit" |
@@ -123,10 +232,6 @@ clean_ada_request <- function(file) {
                                 b == "Other" |
                                 c == "Other" |
                                 d == "Other", 1, 0)) 
-
-  }
-                              
-clean_ada_request_2015_2019 <- clean_ada_request("raw_data/combined_ADA_request.xlsx")
-
 ```
+
 
