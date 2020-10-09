@@ -77,8 +77,9 @@ ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
          date_the_accommodation_met_3220) 
 
 # Takes in a ADA request tibble that has already been filtered to the 
-# correct columns. This function renames the columns and eliminates 
-# the hyphens from the pei. 
+# correct columns. This function renames columns, eliminates 
+# the hyphens from the pei, parses out the accommodation type, and expresses
+# each accommodation type as 1 (requested) or 0 (not requested).
 
 clean_ada_request <- function(x) {
   x <- x %>%
@@ -128,6 +129,7 @@ clean_ada_request <- function(x) {
     # Now, I want to make the data wider again, where 1 represents that a given
     # category of accommodations was requested. I create a dummy variable '1',
     # which is just a column of 1s.
+    
     mutate(dummy = 1) %>%
   
     # Finally, I pivot wider again. The names of the columns in my wider table
@@ -168,7 +170,11 @@ clean_ada_request <- function(x) {
 ada_request_2018 <- clean_ada_request(ada_request_2018)
 ada_request_2020 <- clean_ada_request(ada_request_2020)
 
+# Combine the 2018 and 2020 touchpoint data. Error with col types.
+
 ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
+
+# TODO: Parse the request reasons. Add the other considerations.
 
 
 ```
