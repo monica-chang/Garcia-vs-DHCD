@@ -162,8 +162,19 @@ clean_ada_request <- function(x) {
     
     # Re-order columns to allow for correct row binding.
     
-    select(pei:date_acc_met, req_a_anim, req_a_care, req_a_creg, req_a_cook, req_a_ffloor, req_a_ncarp, req_a_pmod, req_a_scat, req_a_serv, req_a_wchair, req_a_oth) 
-    
+    select(pei:date_acc_met, req_a_anim, req_a_care, req_a_creg, req_a_cook, req_a_ffloor, req_a_ncarp, req_a_pmod, req_a_scat, req_a_serv, req_a_wchair, req_a_oth) %>%
+    mutate(req_a_anim = as.double(unlist(req_a_anim)), .keep = "unused") %>%
+    mutate(req_a_care = as.double(unlist(req_a_care)), .keep = "unused") %>%
+    mutate(req_a_creg = as.double(unlist(req_a_creg)), .keep = "unused") %>%
+    mutate(req_a_cook = as.double(unlist(req_a_cook)), .keep = "unused") %>%
+    mutate(req_a_ffloor = as.double(unlist(req_a_ffloor)), .keep = "unused") %>%
+    mutate(req_a_ncarp = as.double(unlist(req_a_ncarp)), .keep = "unused") %>%
+    mutate(req_a_pmod = as.double(unlist(req_a_pmod)), .keep = "unused") %>%
+    mutate(req_a_scat = as.double(unlist(req_a_scat)), .keep = "unused") %>%
+    mutate(req_a_serv = as.double(unlist(req_a_serv)), .keep = "unused") %>%
+    mutate(req_a_wchair = as.double(unlist(req_a_wchair)), .keep = "unused") %>%
+    mutate(req_a_oth = as.double(unlist(req_a_oth)), .keep = "unused")
+
   }
 
 ada_request_2018 <- clean_ada_request(ada_request_2018)
