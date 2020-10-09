@@ -22,9 +22,8 @@ claudia_data <-
   clean_names()
 
 clean_claudia_data <- claudia_data %>%
-  select(-c(s_t_0_24:other_2)) %>%
-  rename(id = personalid,
-         name = ada_request_data_name,
+  select(-c(s_t_0_23:other_2)) %>%
+  rename(pei = personalid,
          date_received = received,
          first_floor_elevator = x1st_floor_elevator,
          ac = req_a_o_ac,
@@ -47,7 +46,7 @@ ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
   # Clean column names, drop unnecessary columns and correct one column name.
   
   clean_names() %>%
-  select(-c("ada_request_data_name", "touch_point_name_111")) %>%
+  select(-c("touch_point_name_111")) %>%
   rename(if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223 = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_w) 
   
 
