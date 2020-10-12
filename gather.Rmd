@@ -112,16 +112,17 @@ clean_ada_request <- function(x) {
     distinct() %>%
     
     # No more than 4 accommodations are provided to any one row. So, I divide the
-    # request column into four columns, based on the "\\|" divider.
+    # request column into four columns, based on the "\\|" divider. Missing 
+    # values are filled on the right.
     
-    separate(acc_type, into = c("a", "b", "c", "d"), sep = "\\|") %>%
+    separate(acc_type, into = c("a", "b", "c", "d", "e"), sep = "\\|", fill = 'right') %>%
     
     # I want to collapse these four columns into "tidy" format, where each row
     # represents a unique request made. So, I pivot the data to make it longer.
     
-    pivot_longer(cols = c(a, b, c, d), names_to = "letter_id",  values_to = "accommodation_request") %>%
+    pivot_longer(cols = c(a, b, c, d, e), names_to = "letter_id",  values_to = "accommodation_request") %>%
     
-    # If any of the columns c(a, b, c, d) were empty before I pivoted longer, then
+    # If any of the columns c(a, b, c, d, e) were empty before I pivoted longer, then
     # an "NA" value will appear. Additionally, I notice that some cells seem to
     # just contain an empty space (likely due to data entry errors). So, I drop
     # the NAs and remove the cells that are just empty spaces.
