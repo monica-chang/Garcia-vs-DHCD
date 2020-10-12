@@ -107,6 +107,10 @@ clean_ada_request <- function(x) {
     
     mutate(pei = gsub("-", "", pei)) %>%
     
+    # Eliminate duplicate rows.
+    
+    distinct() %>%
+    
     # No more than 4 accommodations are provided to any one row. So, I divide the
     # request column into four columns, based on the "\\|" divider.
     
@@ -165,7 +169,7 @@ clean_ada_request <- function(x) {
 ada_request_2018 <- clean_ada_request(ada_request_2018)
 ada_request_2020 <- clean_ada_request(ada_request_2020)
 
-# Combine the 2018 and 2020 touchpoint data. Error with col types.
+# Combine the 2018 and 2020 touchpoint data.
 
 ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
 
