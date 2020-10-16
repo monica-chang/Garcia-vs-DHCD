@@ -42,7 +42,7 @@ clean_claudia_data <- claudia_data %>%
 
 ```
 
-```{r clean and merge 2018/2020 data}
+```{r clean/merge 2018 and 2020 data}
 
 ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
   
@@ -63,7 +63,7 @@ ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
   select(participant_enterprise_identifier, 
          date_taken_111, 
          where_did_the_ada_request_occur_3211,
-         if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223,
+         if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223, 
          if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
          date_that_the_central_ada_coordinator_received_ada_request_3212,
          ada_accommodation_request_3213,
@@ -198,10 +198,13 @@ ada_request_2020 <- clean_ada_request(ada_request_2020)
 
 ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
 
+saveRDS(ada_request_2018_2020, file = "shiny/data/ada_request_2018_2020.rds")
+
 # TODO: Add in the other acc type + req reasons.
 # TODO: Clean & merge the transfer data + HUD exit data.
 
 ```
+
 
 ```{r 2015-2019 ADA request tables/plots}
 
@@ -273,3 +276,5 @@ reason_types %>%
          y = "Reason type",
          caption = "Source: Department of Housing & Community Development")
 ```
+
+
