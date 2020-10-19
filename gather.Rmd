@@ -89,9 +89,6 @@ clean_ada_request <- function(x) {
     # Rename columns.
     
     rename(pei = participant_enterprise_identifier,
-           
-           # ASK: What is the diff between date received and date decision and date taken? Why does date taken appear after date decision?
-           
            date_received = date_that_the_central_ada_coordinator_received_ada_request_3212,
            date_decision = date_the_decision_made_3215,
            date_taken = date_taken_111,
@@ -103,9 +100,6 @@ clean_ada_request <- function(x) {
            other_acc_type = if_other_ada_accomodation_requested_please_describe_3226,
            req_reason = reason_for_the_ada_request_3214,
            other_req_reason = if_other_reason_please_describe_3227,
-           
-           # ASK: Why are "Yes" "No" "NA" "Partial" and "Interactive Process" options? Only 2027/3571 are "Yes". Should I only analyze these? Do we really trust the DHCD's ADA decisions?
-           
            approved = was_the_ada_request_approved_3216,
            partial = if_partial_please_explain_3217,
            closed = if_closed_please_explain_3219,
@@ -227,7 +221,7 @@ saveRDS(ada_request_2018_2020, file = "shiny/data/ada_request_2018_2020.rds")
 
 ```
 
-```{r 2015-2019 ADA request tables/plots}
+```{r request tables and plots}
 
 request_types <- ada_request_2018_2020 %>%
   pivot_longer(cols = req_a_anim:req_a_oth, names_to = "accomodation_type", values_to = "requests") %>%
@@ -298,7 +292,7 @@ reason_types %>%
          caption = "Source: Department of Housing & Community Development")
 ```
 
-```{r 2015-2019 approved ADA request tables/plots}
+```{r approved request tables and plots}
 approved_requests <- ada_request_2018_2020 %>%
   filter(approved == "Yes") %>%
   pivot_longer(cols = req_a_anim:req_a_oth, names_to = "accomodation_type", values_to = "requests") %>%
@@ -324,15 +318,15 @@ approved_requests %>%
   
 # Create a plot showing the requests by accommodation type.
   
-approved_requests %>%
-  ggplot(aes(x = pct_requests, y = fct_reorder(accomodation_type, pct_requests))) +
-    geom_col() +
-    theme_linedraw() +
-    scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site", "Service providers")) +
-    labs(title = "Percentage of approved ADA requests \nby accomodation type (2015-2019)",
-         x = "Percentage of approved requests", 
-         y = "Accomodation type",
-         caption = "Source: Department of Housing & Community Development")
+
+ggplot(approved_requests, aes(x = pct_requests, y = fct_reorder(accomodation_type, pct_requests))) +
+  geom_col() +
+  theme_linedraw() +
+  scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site", "Service providers")) +
+  labs(title = "Percentage of approved ADA requests \nby accomodation type (2015-2019)",
+       x = "Percentage of approved requests", 
+       y = "Accomodation type",
+       caption = "Source: Department of Housing & Community Development")
 
 approved_reasons <- ada_request_2018_2020 %>%
   filter(approved == "Yes") %>%
@@ -359,31 +353,28 @@ approved_reasons %>%
 
 # Create a plot showing the requests by reason type.
 
-approved_reasons %>%
-  ggplot(aes(x = pct_requests, y = fct_reorder(reason_type, pct_requests))) +
-    geom_col() +
-    theme_linedraw() +
-    scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
-    labs(title = "Percentage of approved ADA requests \nby reason type (2015-2019)",
-         x = "Percentage of approved requests", 
-         y = "Reason type",
-         caption = "Source: Department of Housing & Community Development")
+
+ggplot(approved_reasons, aes(x = pct_requests, y = fct_reorder(reason_type, pct_requests))) +
+  geom_col() +
+  theme_linedraw() +
+  scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
+  labs(title = "Percentage of approved ADA requests \nby reason type (2015-2019)",
+       x = "Percentage of approved requests", 
+       y = "Reason type",
+       caption = "Source: Department of Housing & Community Development")
 ```
 
 ```{r 2015-2019 approved ADA request tables/plots}
-
-# ASK: 54 are negative # of days... so the date_acc_met is before the date_received? 
-#      587 are positive # of days. 558 are approved & positive # of days.
-
 ada_request_2018_2020 %>%
   filter(days_until_accommodation_met >= 0) %>% 
+  filter(approved == "Yes") %>%
   group_by(days_until_accommodation_met) %>%
-  summarize(num_requests_met = n()) %>%
-  mutate (prop_requests_met = num_requests_met/2027) %>%
-  mutate (cum_prop_requests = cumsum(prop_requests_met)) %>%
+  summarize(num_requests_met = n(), .groups = "drop") %>%
+  mutate(prop_requests_met = num_requests_met/2027) %>%
+  mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
   ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
     geom_line() + 
-    xlim(0, 200) +
+    xlim(0, 100) +
     ylim(0, 1) +
     labs(title = "Proportion of ADA requests that were met (2015-2019)")
 ```
