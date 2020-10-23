@@ -42,7 +42,7 @@ clean_claudia_data <- claudia_data %>%
 
 ```
 
-```{r clean/merge 2018 and 2020 data}
+```{r clean 2018 and 2020 data}
 
 ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
   
@@ -77,7 +77,9 @@ ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
          was_the_accommodations_met_3218,
          how_was_the_accommodation_met_3221,
          date_the_accommodation_met_3220) 
+```
 
+```{r clean/merge 2018 and 2020 data}
 # Takes in a ADA request tibble that has already been filtered to the 
 # correct columns. This function renames columns, eliminates 
 # hyphens from the pei, parses out the accommodation type, and expresses
@@ -134,6 +136,9 @@ clean_ada_request <- function(x) {
     
     drop_na(accommodation_request) %>%
     filter(accommodation_request != "") %>%
+    mutate(accommodation_request = recode(accommodation_request, 
+                                        `Comfort Animal within Placement Unit` = "Assistance Animal within Placement Unit",
+                                        `Scattered Site Placement Unit` = "Scattered Site Placement Unit / Co-housing Unit")) %>%
     
     # Now, I want to make the data wider again, where 1 represents that a given
     # category of accommodations was requested. I create a dummy variable '1',
@@ -155,8 +160,6 @@ clean_ada_request <- function(x) {
     
     # Rename accommodation types.
     
-    rename_with(~ gsub("comfort", "assistance", .x, fixed = TRUE)) %>%
-    rename_with(~ gsub("scattered_site_placement_unit_co_housing_unit", "scattered_site_placement_unit", .x, fixed = TRUE)) %>%
     rename(req_a_anim = assistance_animal_within_placement_unit) %>% 
     rename(req_a_care = assigned_caretaker_temporary_non_ea_household_member) %>%
     rename(req_a_creg = change_in_ea_regulation_re_housing_plan) %>%
@@ -164,7 +167,7 @@ clean_ada_request <- function(x) {
     rename(req_a_ffloor = first_floor_or_elevator_access) %>%
     rename(req_a_ncarp = non_carpeted_placement_unit) %>%
     rename(req_a_pmod = physical_modification_to_placement_unit_visual_cues_for_hearing_impaired_grab_bars_in_shower_etc) %>% 
-    rename(req_a_scat = scattered_site_placement_unit) %>%  
+    rename(req_a_scat = scattered_site_placement_unit_co_housing_unit) %>%  
     rename(req_a_serv = placement_unit_close_to_service_providers_when_a_participant_is_placed_out_of_area_away_from_their_current_medical_providers) %>%
     rename(req_a_wchair = wheelchair_accessible_placement_unit) %>%
     rename(req_a_oth = other) %>%
@@ -182,15 +185,16 @@ clean_ada_request <- function(x) {
     pivot_longer(cols = c(f, g, h, i, j), names_to = "letter_id",  values_to = "reason_for_request") %>%
     drop_na(reason_for_request) %>%
     filter(reason_for_request != "") %>%
+    mutate(reason_for_request = recode(reason_for_request, 
+                                      `Developmental Disability` = "Developmental Disability / Behavioral",
+                                      `Mental Health` = "Mental / Emotional Health")) %>%
     mutate(dummy = 1) %>%
     pivot_wider(id_cols = pei:req_a_oth, names_from = reason_for_request, values_from = dummy, values_fill = 0) %>%
     clean_names() %>%
-    rename_with(~ gsub("developmental_disability_behavioral", "developmental_disability", .x, fixed = TRUE)) %>%
-    rename_with(~ gsub("mental_emotional_health", "mental_health", .x, fixed = TRUE)) %>%
-    rename(reason_mental = mental_health) %>% 
+    rename(reason_mental = mental_emotional_health) %>% 
     rename(reason_emotional = emotional_health) %>%
     rename(reason_physical = physical_health) %>%
-    rename(reason_devel_behav = developmental_disability) %>%
+    rename(reason_devel_behav = developmental_disability_behavioral) %>%
     rename(reason_other = other) %>%
     mutate(days_until_accommodation_met = as.double(difftime(lubridate::ymd(date_acc_met),
                                                              lubridate::ymd(date_received),
@@ -213,13 +217,13 @@ ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
 
 saveRDS(ada_request_2018_2020, file = "shiny/data/ada_request_2018_2020.rds")
 
-# TODO: Find date to accommodation met information.
 # TODO: Add in the other acc types + req reasons. 
 # TODO: Clean & merge the transfer data
 # TODO: Clean & merge HUD exit data. 
 # TODO: Clean & merge bed registry characteristics.
 
 ```
+
 
 ```{r request tables and plots}
 
