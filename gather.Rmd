@@ -231,6 +231,7 @@ reason_types %>%
   ggplot(aes(x = pct_requests, y = fct_reorder(request_reason, pct_requests))) +
     geom_col() +
     theme_linedraw() +
+    scale_y_discrete(labels = c("Other", "Developmental Disability /\n Behavioral", "Emotional Health", "Mental Health", "Physical Health")) +
     labs(title = "Percentage of ADA requests by reason type (2015-2019)",
          x = "Percentage of requests", 
          y = "Reason type",
@@ -285,6 +286,7 @@ approved_reason_types %>%
   ggplot(aes(x = pct_requests, y = fct_reorder(request_reason, pct_requests))) +
     geom_col() +
     theme_linedraw() +
+    scale_y_discrete(labels = c("Other", "Developmental Disability /\n Behavioral", "Emotional Health", "Mental Health", "Physical Health")) +
     labs(title = "Percentage of approved ADA requests by reason type (2015-2019)",
          x = "Percentage of requests", 
          y = "Reason type",
