@@ -293,6 +293,9 @@ approved_reason_types %>%
 
 
 ```{r 2015-2019 approved ADA request tables/plots}
+
+# Create a plot showing the proportion of approved ADA requests met over time.
+
 approved_adas %>%
   filter(days_until_accommodation_met >= 0) %>% 
   group_by(days_until_accommodation_met) %>%
