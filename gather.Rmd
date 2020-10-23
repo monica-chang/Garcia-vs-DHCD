@@ -77,9 +77,7 @@ ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
          was_the_accommodations_met_3218,
          how_was_the_accommodation_met_3221,
          date_the_accommodation_met_3220) 
-```
 
-```{r clean/merge 2018 and 2020 data}
 # Takes in a ADA request tibble that has already been filtered to the 
 # correct columns. This function renames columns, eliminates 
 # hyphens from the pei, parses out the accommodation type, and expresses
@@ -100,8 +98,8 @@ clean_ada_request <- function(x) {
            hotel_from = if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
            acc_type = ada_accommodation_request_3213,
            other_acc_type = if_other_ada_accomodation_requested_please_describe_3226,
-           req_reason = reason_for_the_ada_request_3214,
-           other_req_reason = if_other_reason_please_describe_3227,
+           request_reason = reason_for_the_ada_request_3214,
+           other_request_reason = if_other_reason_please_describe_3227,
            approved = was_the_ada_request_approved_3216,
            partial = if_partial_please_explain_3217,
            closed = if_closed_please_explain_3219,
@@ -127,84 +125,41 @@ clean_ada_request <- function(x) {
     
     pivot_longer(cols = c(a, b, c, d, e), 
                  names_to = "letter_id",  
-                 values_to = "accommodation_request") %>%
+                 values_to = "request_type") %>%
     
     # If any of the columns c(a, b, c, d, e) were empty before I pivoted longer, 
     # an "NA" value will appear. Additionally, I notice that some cells seem to
     # just contain an empty space (likely due to data entry errors). So, I drop
     # the NAs and remove the cells that are just empty spaces.
     
-    drop_na(accommodation_request) %>%
-    filter(accommodation_request != "") %>%
-    mutate(accommodation_request = recode(accommodation_request, 
-                                        `Comfort Animal within Placement Unit` = "Assistance Animal within Placement Unit",
-                                        `Scattered Site Placement Unit` = "Scattered Site Placement Unit / Co-housing Unit")) %>%
+    drop_na(request_type) %>%
+    filter(request_type != "") %>%
     
-    # Now, I want to make the data wider again, where 1 represents that a given
-    # category of accommodations was requested. I create a dummy variable '1',
-    # which is just a column of 1s.
+    # I rename certain accommodation request types to be more succinct.
     
-    mutate(dummy = 1) %>%
+    mutate(request_type = recode(request_type, 
+                                 `Comfort Animal within Placement Unit` = "Assistance Animal within Placement Unit",
+                                 `Scattered Site Placement Unit` = "Scattered Site Placement Unit / Co-housing Unit",
+                                 `Placement Unit Close to Service Providers (when a participant is placed out of area away from their current medical providers)` = "Placement Unit Close to Service Providers",
+                                 `Physical Modification to Placement Unit (visual cues for hearing impaired, grab bars in shower, etc.)` = "Physical Modification to Placement Unit")) %>%
   
-    # Finally, I pivot wider again. The names of the columns in my wider table
-    # will be the values currently in the 'accommodation_request' column. The
-    # values in those columns will be either 0 if the category is not
-    # relevant, or 1 if the category was requested in that case.
+    # I rename certain accommodation request reasons to ensure that 2018 and
+    # 2020 data follow similar conventions.
     
-    pivot_wider(id_cols = pei:date_acc_met, 
-                names_from = accommodation_request, 
-                values_from = dummy, 
-                values_fill = 0) %>%
-    
-    clean_names() %>%
-    
-    # Rename accommodation types.
-    
-    rename(req_a_anim = assistance_animal_within_placement_unit) %>% 
-    rename(req_a_care = assigned_caretaker_temporary_non_ea_household_member) %>%
-    rename(req_a_creg = change_in_ea_regulation_re_housing_plan) %>%
-    rename(req_a_cook = access_to_full_cooking_facilities) %>%
-    rename(req_a_ffloor = first_floor_or_elevator_access) %>%
-    rename(req_a_ncarp = non_carpeted_placement_unit) %>%
-    rename(req_a_pmod = physical_modification_to_placement_unit_visual_cues_for_hearing_impaired_grab_bars_in_shower_etc) %>% 
-    rename(req_a_scat = scattered_site_placement_unit_co_housing_unit) %>%  
-    rename(req_a_serv = placement_unit_close_to_service_providers_when_a_participant_is_placed_out_of_area_away_from_their_current_medical_providers) %>%
-    rename(req_a_wchair = wheelchair_accessible_placement_unit) %>%
-    rename(req_a_oth = other) %>%
-    
-    # Re-order columns and drop unnecessary columns.
-    
-    select(pei, date_received, date_decision, date_taken, date_acc_met, 
-           req_where:how_acc_met, req_a_anim, req_a_care, req_a_creg, req_a_cook, 
-           req_a_ffloor, req_a_ncarp, req_a_pmod, req_a_scat, req_a_serv, 
-           req_a_wchair, req_a_oth) %>%
-    
-    # I parsed/renamed the reasons for request in the same way I parsed the accommodation type.
-    
-    separate(req_reason, into = c("f", "g", "h", "i", "j"), sep = "\\|", fill = 'right') %>%
-    pivot_longer(cols = c(f, g, h, i, j), names_to = "letter_id",  values_to = "reason_for_request") %>%
-    drop_na(reason_for_request) %>%
-    filter(reason_for_request != "") %>%
-    mutate(reason_for_request = recode(reason_for_request, 
-                                      `Developmental Disability` = "Developmental Disability / Behavioral",
-                                      `Mental Health` = "Mental / Emotional Health")) %>%
-    mutate(dummy = 1) %>%
-    pivot_wider(id_cols = pei:req_a_oth, names_from = reason_for_request, values_from = dummy, values_fill = 0) %>%
-    clean_names() %>%
-    rename(reason_mental = mental_emotional_health) %>% 
-    rename(reason_emotional = emotional_health) %>%
-    rename(reason_physical = physical_health) %>%
-    rename(reason_devel_behav = developmental_disability_behavioral) %>%
-    rename(reason_other = other) %>%
+    mutate_if(is.character, str_replace_all, pattern = "Developmental Disability / Behavioral", replacement = "Developmental Disability") %>%
+    mutate_if(is.character, str_replace_all, pattern = "Developmental Disability", replacement = "Developmental Disability / Behavioral") %>%
+    mutate_if(is.character, str_replace_all, pattern = "Mental / Emotional Health", replacement = "Mental Health") %>%
+    mutate(request_reason = strsplit(request_reason, split = "\\|")) %>%
+
     mutate(days_until_accommodation_met = as.double(difftime(lubridate::ymd(date_acc_met),
                                                              lubridate::ymd(date_received),
                                                              units = "days"))) %>%
     
     # Re-order columns and drop unnecessary columns.
     
-    select(pei:date_acc_met, days_until_accommodation_met, req_where:req_a_oth, 
-           reason_mental, reason_mental, reason_emotional, reason_physical, 
-           reason_devel_behav, reason_other)
+    select(pei, date_received, date_decision, date_taken, date_acc_met, 
+           days_until_accommodation_met, request_type, request_reason, 
+           req_where:how_acc_met) 
 
   }
 
@@ -214,8 +169,11 @@ ada_request_2020 <- clean_ada_request(ada_request_2020)
 # Combine the 2018 and 2020 touchpoint data.
 
 ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
+approved_adas <- bind_rows(ada_request_2018, ada_request_2020) %>%
+  filter(approved == "Yes")
 
 saveRDS(ada_request_2018_2020, file = "shiny/data/ada_request_2018_2020.rds")
+saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
 
 # TODO: Add in the other acc types + req reasons. 
 # TODO: Clean & merge the transfer data
@@ -226,11 +184,9 @@ saveRDS(ada_request_2018_2020, file = "shiny/data/ada_request_2018_2020.rds")
 
 
 ```{r request tables and plots}
-
 request_types <- ada_request_2018_2020 %>%
-  pivot_longer(cols = req_a_anim:req_a_oth, names_to = "accomodation_type", values_to = "requests") %>%
-  group_by(accomodation_type) %>%
-  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  group_by(request_type) %>%
+  summarize(total_requests = n(), .groups = "drop") %>%
   arrange(desc(total_requests)) %>%
   mutate(pct_requests = total_requests/sum(total_requests))
 
@@ -239,11 +195,11 @@ request_types <- ada_request_2018_2020 %>%
 request_types %>%
   gt() %>%
   tab_header(
-    title = "Percentage of ADA requests by accomodation type",
+    title = "Percentage of unique ADA requests by accomodation type",
     subtitle = glue::glue("2015 to 2019")
   ) %>%
   fmt_passthrough(
-    columns = vars(accomodation_type, total_requests)
+    columns = vars(request_type, total_requests)
   ) %>%
   fmt_percent(
     columns = vars(pct_requests)
@@ -252,44 +208,29 @@ request_types %>%
 # Create a plot showing the requests by accommodation type.
   
 request_types %>%
-  ggplot(aes(x = pct_requests, y = fct_reorder(accomodation_type, pct_requests))) +
+  ggplot(aes(x = pct_requests, y = fct_reorder(request_type, pct_requests))) +
     geom_col() +
     theme_linedraw() +
-    scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site", "Service providers")) +
+    scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site/Co-housing", "Service providers")) +
     labs(title = "Percentage of ADA requests by accomodation type (2015-2019)",
          x = "Percentage of requests", 
          y = "Accomodation type",
          caption = "Source: Department of Housing & Community Development")
 
 reason_types <- ada_request_2018_2020 %>%
-  pivot_longer(cols = reason_mental:reason_other, names_to = "reason_type", values_to = "requests") %>%
-  group_by(reason_type) %>%
-  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  unnest(request_reason) %>%
+  group_by(request_reason) %>%
+  summarize(total_requests = n(), .groups = "drop") %>%
+  drop_na() %>%
   arrange(desc(total_requests)) %>%
   mutate(pct_requests = total_requests/sum(total_requests))
-
-# Create a table showing the requests by reason type.
-
-reason_types %>%
-  gt() %>%
-  tab_header(
-    title = "Percentage of ADA requests by reason type",
-    subtitle = glue::glue("2015 to 2019")
-  ) %>%
-  fmt_passthrough(
-    columns = vars(reason_type, total_requests)
-  ) %>%
-  fmt_percent(
-    columns = vars(pct_requests)
-  )
 
 # Create a plot showing the requests by reason type.
 
 reason_types %>%
-  ggplot(aes(x = pct_requests, y = fct_reorder(reason_type, pct_requests))) +
+  ggplot(aes(x = pct_requests, y = fct_reorder(request_reason, pct_requests))) +
     geom_col() +
     theme_linedraw() +
-    scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
     labs(title = "Percentage of ADA requests by reason type (2015-2019)",
          x = "Percentage of requests", 
          y = "Reason type",
@@ -297,24 +238,22 @@ reason_types %>%
 ```
 
 ```{r approved request tables and plots}
-approved_requests <- ada_request_2018_2020 %>%
-  filter(approved == "Yes") %>%
-  pivot_longer(cols = req_a_anim:req_a_oth, names_to = "accomodation_type", values_to = "requests") %>%
-  group_by(accomodation_type) %>%
-  summarize(total_requests = sum(requests), .groups = "drop") %>%
+approved_request_types <- approved_adas %>%
+  group_by(request_type) %>%
+  summarize(total_requests = n(), .groups = "drop") %>%
   arrange(desc(total_requests)) %>%
   mutate(pct_requests = total_requests/sum(total_requests))
 
 # Create a table showing the requests by accommodation type.
 
-approved_requests %>%
+approved_request_types %>%
   gt() %>%
   tab_header(
     title = "Percentage of approved ADA requests by accomodation type",
     subtitle = glue::glue("2015 to 2019")
   ) %>%
   fmt_passthrough(
-    columns = vars(accomodation_type, total_requests)
+    columns = vars(request_type, total_requests)
   ) %>%
   fmt_percent(
     columns = vars(pct_requests)
@@ -322,65 +261,51 @@ approved_requests %>%
   
 # Create a plot showing the requests by accommodation type.
   
+approved_request_types %>%
+  ggplot(aes(x = pct_requests, y = fct_reorder(request_type, pct_requests))) +
+    geom_col() +
+    theme_linedraw() +
+    scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site/Co-housing", "Service providers")) +
+    labs(title = "Percentage of approved ADA requests by accomodation type (2015-2019)",
+         x = "Percentage of requests", 
+         y = "Accomodation type",
+         caption = "Source: Department of Housing & Community Development")
 
-ggplot(approved_requests, aes(x = pct_requests, y = fct_reorder(accomodation_type, pct_requests))) +
-  geom_col() +
-  theme_linedraw() +
-  scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site", "Service providers")) +
-  labs(title = "Percentage of approved ADA requests \nby accomodation type (2015-2019)",
-       x = "Percentage of approved requests", 
-       y = "Accomodation type",
-       caption = "Source: Department of Housing & Community Development")
-
-approved_reasons <- ada_request_2018_2020 %>%
-  filter(approved == "Yes") %>%
-  pivot_longer(cols = reason_mental:reason_other, names_to = "reason_type", values_to = "requests") %>%
-  group_by(reason_type) %>%
-  summarize(total_requests = sum(requests), .groups = "drop") %>%
+approved_reason_types <- approved_adas %>%
+  unnest(request_reason) %>%
+  group_by(request_reason) %>%
+  summarize(total_requests = n(), .groups = "drop") %>%
+  drop_na() %>%
   arrange(desc(total_requests)) %>%
   mutate(pct_requests = total_requests/sum(total_requests))
 
-# Create a table showing the requests by reason type.
-
-approved_reasons %>%
-  gt() %>%
-  tab_header(
-    title = "Percentage of approved ADA requests by reason type",
-    subtitle = glue::glue("2015 to 2019")
-  ) %>%
-  fmt_passthrough(
-    columns = vars(reason_type, total_requests)
-  ) %>%
-  fmt_percent(
-    columns = vars(pct_requests)
-  )
-
 # Create a plot showing the requests by reason type.
 
-
-ggplot(approved_reasons, aes(x = pct_requests, y = fct_reorder(reason_type, pct_requests))) +
-  geom_col() +
-  theme_linedraw() +
-  scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
-  labs(title = "Percentage of approved ADA requests \nby reason type (2015-2019)",
-       x = "Percentage of approved requests", 
-       y = "Reason type",
-       caption = "Source: Department of Housing & Community Development")
+approved_reason_types %>%
+  ggplot(aes(x = pct_requests, y = fct_reorder(request_reason, pct_requests))) +
+    geom_col() +
+    theme_linedraw() +
+    labs(title = "Percentage of approved ADA requests by reason type (2015-2019)",
+         x = "Percentage of requests", 
+         y = "Reason type",
+         caption = "Source: Department of Housing & Community Development")
 ```
 
+
 ```{r 2015-2019 approved ADA request tables/plots}
-ada_request_2018_2020 %>%
+approved_adas %>%
   filter(days_until_accommodation_met >= 0) %>% 
-  filter(approved == "Yes") %>%
   group_by(days_until_accommodation_met) %>%
   summarize(num_requests_met = n(), .groups = "drop") %>%
-  mutate(prop_requests_met = num_requests_met/2027) %>%
+  mutate(prop_requests_met = num_requests_met/nrow(approved_adas)) %>%
   mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
   ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
     geom_line() + 
     xlim(0, 100) +
     ylim(0, 1) +
-    labs(title = "Proportion of ADA requests that were met (2015-2019)")
+    labs(title = "Proportion of approved ADA requests that were met (2015-2019)", 
+         x = "Days until accommodation was met",
+         y = "Proportion of requests met")
 ```
 
 
