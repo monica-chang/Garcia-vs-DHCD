@@ -32,6 +32,29 @@ shinyUI(
                
                tabPanel(
                    "Data",
-                   plotOutput("request_types_plot")
+                   plotOutput("request_types_plot"),
+                   sidebarLayout(
+                     sidebarPanel(
+                       selectInput("accommodation_select",
+                                   "Choose a specific accommodation type:",
+                                   choices = c("Placement Unit Close to Service Providers"= "Placement Unit Close to Service Providers",
+                                               "Scattered Site Placement Unit / Co-housing Unit" = "Scattered Site Placement Unit / Co-housing Unit",
+                                               "Assistance Animal within Placement Unit" = "Assistance Animal within Placement Unit",
+                                               "First Floor or Elevator Access" = "First Floor or Elevator Access",
+                                               "Non Carpeted Placement Unit" = "Non Carpeted Placement Unit",
+                                               "Change in EA Regulation / Re-Housing Plan" = "Change in EA Regulation / Re-Housing Plan",
+                                               "Physical Modification to Placement Unit" = "Physical Modification to Placement Unit",
+                                               "Access to Full Cooking Facilities" = "Access to Full Cooking Facilities",
+                                               "Wheelchair Accessible Placement Unit" = "Wheelchair Accessible Placement Unit",
+                                               "Assigned Caretaker / Temporary Non-EA Household Member" = "Assigned Caretaker / Temporary Non-EA Household Member",
+                                               "Other" = "Other"),
+                                   selected = "Placement Unit Close to Service Providers",
+                                   multiple = TRUE)
+                     ),
+                     
+                     mainPanel(
+                       plotOutput("request_time_plot")
+                  )
+                   
                )
-    ))
+    )))

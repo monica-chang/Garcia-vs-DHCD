@@ -18,31 +18,9 @@ library(janitor)
 ```
 
 
-```{r claudia data, include = FALSE}
-
-claudia_data <- 
-  read_excel("old_data/2018_transfers_and_approved_ADAs.xlsx") %>%
-  clean_names()
-
-clean_claudia_data <- claudia_data %>%
-  select(-c(s_t_0_23:other_2)) %>%
-  rename(pei = personalid,
-         date_received = received,
-         first_floor_elevator = x1st_floor_elevator,
-         ac = req_a_o_ac,
-         mattress = req_a_o_mattress,
-         other_description = if_other_ada_accomodation_requested_please_describe_3226,
-         date_decision = decision,
-         date_exit = exit,
-         reason_for_exit = reason,
-         transfer_date = it_referral_dt,
-         char_present = required_characteristics_present_in_new_unit,
-         char_not_present = required_characteristics_not_present_in_new_unit,
-         char_not_clear = required_characteristics_not_clear_in_new_unit)
-
-```
-
 ```{r clean 2018 and 2020 data}
+
+# I filter the 2018 and 2020 data so that they have consistent columns.
 
 ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
   
@@ -50,7 +28,8 @@ ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
   
   clean_names() %>%
   select(-c("touch_point_name_111")) %>%
-  rename(if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223 = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_w) 
+  rename(if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223 = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_w,
+         name = ada_request_data_name) 
   
 
 ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
@@ -58,9 +37,14 @@ ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
   # Clean column names, drop unnecessary columns and correct column order.
   
   clean_names() %>%
+  
+  # The 2020 data does not ask about hotels/motels or other accommodations, but
+  # we add them here for consistency with 2018 data.
+  
   mutate(if_the_ada_request_occurred_in_the_hotel_motel_please_indicate = NA) %>%
   mutate(if_other_ada_accomodation_requested_please_describe_3226 = NA) %>%
   select(participant_enterprise_identifier, 
+         name,
          date_taken_111, 
          where_did_the_ada_request_occur_3211,
          if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223, 
@@ -115,7 +99,7 @@ clean_ada_request <- function(x) {
     distinct() %>%
     
     # No more than 4 accommodations are provided to any one row. So, I divide the
-    # request column into four columns, based on the "\\|" divider. Missing 
+    # request column into five columns, based on the "\\|" divider. Missing 
     # values are filled on the right.
     
     separate(acc_type, into = c("a", "b", "c", "d", "e"), sep = "\\|", fill = 'right') %>%
@@ -135,7 +119,8 @@ clean_ada_request <- function(x) {
     drop_na(request_type) %>%
     filter(request_type != "") %>%
     
-    # I rename certain accommodation request types to be more succinct.
+    # I rename certain accommodation request types to ensure that 2018 and
+    # 2020 data follow similar conventions.
     
     mutate(request_type = recode(request_type, 
                                  `Comfort Animal within Placement Unit` = "Assistance Animal within Placement Unit",
@@ -149,7 +134,17 @@ clean_ada_request <- function(x) {
     mutate_if(is.character, str_replace_all, pattern = "Developmental Disability / Behavioral", replacement = "Developmental Disability") %>%
     mutate_if(is.character, str_replace_all, pattern = "Developmental Disability", replacement = "Developmental Disability / Behavioral") %>%
     mutate_if(is.character, str_replace_all, pattern = "Mental / Emotional Health", replacement = "Mental Health") %>%
-    mutate(request_reason = strsplit(request_reason, split = "\\|")) %>%
+    
+    # I separate request_reason into multiple columns to account for individuals
+    # that requested accommodations for more than one reason.
+    
+    separate(request_reason, into = c("reason_1", "reason_2", "reason_3", "reason_4"), sep = "\\|", fill = 'right') %>%
+    
+    # I create a variable calculating the days it takes for each unique ADA
+    # request to be met - based on the date_received and data_acc_met columns.
+    
+    # Note: 3689/4509 days_until_accommodation_met values are missing! We
+    # will need transfer/bed registry data to supplement these missing values.
 
     mutate(days_until_accommodation_met = as.double(difftime(lubridate::ymd(date_acc_met),
                                                              lubridate::ymd(date_received),
@@ -157,8 +152,8 @@ clean_ada_request <- function(x) {
     
     # Re-order columns and drop unnecessary columns.
     
-    select(pei, date_received, date_decision, date_taken, date_acc_met, 
-           days_until_accommodation_met, request_type, request_reason, 
+    select(pei, name, date_received, date_decision, date_taken, date_acc_met, 
+           days_until_accommodation_met, request_type, reason_1:reason_4, 
            req_where:how_acc_met) 
 
   }
@@ -169,22 +164,51 @@ ada_request_2020 <- clean_ada_request(ada_request_2020)
 # Combine the 2018 and 2020 touchpoint data.
 
 ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
-approved_adas <- bind_rows(ada_request_2018, ada_request_2020) %>%
-  filter(approved == "Yes")
+write_csv(ada_request_2018_2020, 
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_unprocessed.csv")
 
-saveRDS(ada_request_2018_2020, file = "shiny/data/ada_request_2018_2020.rds")
-saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
-
-# TODO: Add in the other acc types + req reasons. 
-# TODO: Clean & merge the transfer data
-# TODO: Clean & merge HUD exit data. 
-# TODO: Clean & merge bed registry characteristics.
 
 ```
 
+```{r accounting for partial approvals and other categories}
 
-```{r request tables and plots}
-request_types <- ada_request_2018_2020 %>%
+# I manually went through the 2018/2020 data to account for partial requests
+# that provided sufficient information to determine whether a unique request
+# was met or not. I manually went through the "other" categories for 
+# request type and request reason to classify frequently occurring answers.
+col_types <- cols(
+  .default = col_character(),
+  date_received = col_datetime(format = ""),
+  date_decision = col_datetime(format = ""),
+  date_taken = col_datetime(format = ""),
+  date_acc_met = col_datetime(format = ""),
+  days_until_accommodation_met = col_double(),
+  partial = col_character(),
+  closed = col_logical()
+)
+
+processed_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020.csv", col_types = col_types) %>%
+  select(-other_acc_type, -other_request_reason, -partial, -closed)
+
+# Filter the data to only count approved requests. 2764/4509 unique requests
+# are approved. We are assuming that DHCD correctly approves requests.
+
+approved_adas <- processed_adas %>%
+  filter(approved == "Yes") %>%
+  select(-approved)
+
+# Save these tibbles as compressed RDS files to be used in the Shiny app.
+
+saveRDS(processed_adas, file = "shiny/data/ada_request_2018_2020.rds")
+saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
+
+# TODO: Clean & merge the transfer data
+# TODO: Clean & merge HUD exit data. 
+# TODO: Clean & merge bed registry characteristics.
+```
+
+```{r ADA request tables and plots}
+request_types <- processed_adas %>%
   group_by(request_type) %>%
   summarize(total_requests = n(), .groups = "drop") %>%
   arrange(desc(total_requests)) %>%
@@ -211,17 +235,18 @@ request_types %>%
   ggplot(aes(x = pct_requests, y = fct_reorder(request_type, pct_requests))) +
     geom_col() +
     theme_linedraw() +
-    scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site/Co-housing", "Service providers")) +
+    scale_y_discrete(labels = c("Additional bedrooms", "Caretaker", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site/Co-housing", "Service providers")) +
     labs(title = "Percentage of ADA requests by accomodation type (2015-2019)",
          x = "Percentage of requests", 
          y = "Accomodation type",
          caption = "Source: Department of Housing & Community Development")
 
-reason_types <- ada_request_2018_2020 %>%
-  unnest(request_reason) %>%
+reason_types <- processed_adas %>%
+  pivot_longer(reason_1:reason_4, names_to = "reason_id", values_to = "request_reason") %>%
+  drop_na(request_reason) %>%
+  filter(request_reason != "") %>%
   group_by(request_reason) %>%
   summarize(total_requests = n(), .groups = "drop") %>%
-  drop_na() %>%
   arrange(desc(total_requests)) %>%
   mutate(pct_requests = total_requests/sum(total_requests))
 
@@ -238,7 +263,7 @@ reason_types %>%
          caption = "Source: Department of Housing & Community Development")
 ```
 
-```{r approved request tables and plots}
+```{r approved ADA request tables and plots}
 approved_request_types <- approved_adas %>%
   group_by(request_type) %>%
   summarize(total_requests = n(), .groups = "drop") %>%
@@ -266,17 +291,19 @@ approved_request_types %>%
   ggplot(aes(x = pct_requests, y = fct_reorder(request_type, pct_requests))) +
     geom_col() +
     theme_linedraw() +
-    scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site/Co-housing", "Service providers")) +
-    labs(title = "Percentage of approved ADA requests by accomodation type (2015-2019)",
+    scale_y_discrete(labels = c("Additional bedrooms", "Caretaker", "Change in regulation", "AC Unit", "Wheelchair",  "Cooking facilities", "Physical modification", "Non-carpeted", "Assistance animal", "First floor/elevator",  "Other", "Scattered site/Co-housing", "Service providers")) +
+    labs(title = "Percentage of approved ADA requests \nby accomodation type (2015-2019)",
+         subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
          x = "Percentage of requests", 
          y = "Accomodation type",
          caption = "Source: Department of Housing & Community Development")
 
 approved_reason_types <- approved_adas %>%
-  unnest(request_reason) %>%
+  pivot_longer(reason_1:reason_4, names_to = "reason_id", values_to = "request_reason") %>%
+  drop_na(request_reason) %>%
+  filter(request_reason != "") %>%
   group_by(request_reason) %>%
   summarize(total_requests = n(), .groups = "drop") %>%
-  drop_na() %>%
   arrange(desc(total_requests)) %>%
   mutate(pct_requests = total_requests/sum(total_requests))
 
