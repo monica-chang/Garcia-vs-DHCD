@@ -47,6 +47,8 @@ shinyUI(
                                                "Access to Full Cooking Facilities" = "Access to Full Cooking Facilities",
                                                "Wheelchair Accessible Placement Unit" = "Wheelchair Accessible Placement Unit",
                                                "Assigned Caretaker / Temporary Non-EA Household Member" = "Assigned Caretaker / Temporary Non-EA Household Member",
+                                               "Additional bedrooms" = "Additional bedrooms",
+                                               "AC Unit" = "AC Unit",
                                                "Other" = "Other"),
                                    selected = "Placement Unit Close to Service Providers",
                                    multiple = TRUE)

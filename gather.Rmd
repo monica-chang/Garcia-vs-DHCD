@@ -199,7 +199,7 @@ approved_adas <- processed_adas %>%
 
 # Save these tibbles as compressed RDS files to be used in the Shiny app.
 
-saveRDS(processed_adas, file = "shiny/data/ada_request_2018_2020.rds")
+saveRDS(processed_adas, file = "shiny/data/processed_adas.rds")
 saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
 
 # TODO: Clean & merge the transfer data

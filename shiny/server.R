@@ -17,7 +17,7 @@ shinyServer(function(input, output) {
             ggplot(aes(x = pct_requests, y = fct_reorder(request_type, pct_requests))) +
             geom_col() +
             theme_linedraw() +
-            scale_y_discrete(labels = c("Caretaker", "Wheelchair", "Cooking facilities", "Physical modification", "Change in regulation", "Non-carpeted", "First floor/elevator", "Assistance animal", "Other", "Scattered site/Co-housing", "Service providers")) +
+            scale_y_discrete(labels = c("Additional bedrooms", "Caretaker", "Change in regulation", "AC Unit", "Wheelchair",  "Cooking facilities", "Physical modification", "Non-carpeted", "Assistance animal", "First floor/elevator",  "Other", "Scattered site/Co-housing", "Service providers")) +
             labs(title = "Percentage of approved ADA requests \nby accomodation type (2015-2019)",
                  subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
                  x = "Percentage of requests", 
@@ -38,7 +38,7 @@ shinyServer(function(input, output) {
             xlim(0, 100) +
             labs(title = "Proportion of approved ADA requests that were met (2015-2019)", 
                  x = "Days until accommodation was met",
-                 y = "Proportion of total requests met")
+                 y = "Proportion of requests met")
         })
 
 })
