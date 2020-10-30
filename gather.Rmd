@@ -64,8 +64,11 @@ ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
 
 # Takes in a ADA request tibble that has already been filtered to the 
 # correct columns. This function renames columns, eliminates 
-# hyphens from the pei, parses out the accommodation type, and expresses
-# each accommodation type as 1 (requested) or 0 (not requested).
+# hyphens from the pei, eliminates duplicate rows, and pivots the data 
+# so that each row represents a unique accommodation request made (i.e.
+# if someone requested 3 different accommodations on one day, they would
+# appear as 3 different rows). This will allow me to manually go through and
+# account for partial approvals.
 
 clean_ada_request <- function(x) {
   x <- x %>%
@@ -165,17 +168,23 @@ ada_request_2020 <- clean_ada_request(ada_request_2020)
 
 ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
 write_csv(ada_request_2018_2020, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_unprocessed.csv")
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_unprocessed.csv")
 
 
 ```
 
 ```{r accounting for partial approvals and other categories}
 
-# I manually went through the 2018/2020 data to account for partial requests
-# that provided sufficient information to determine whether a unique request
-# was met or not. I manually went through the "other" categories for 
-# request type and request reason to classify frequently occurring answers.
+# After doing the above data cleaning, I manually went through the data 
+# to account for partial approvals that provided sufficient information to 
+# determine whether a unique accommodation request was approved or not. 
+# Note: 32 partial approval did not provide sufficient information to 
+# manually input approval data so they were not counted.
+
+# I also manually went through the "other" categories for request type and 
+# request reason to categorize frequently occurring answers (e.g. AC Unit,
+# additional bedrooms).
+
 col_types <- cols(
   .default = col_character(),
   date_received = col_datetime(format = ""),
@@ -187,19 +196,34 @@ col_types <- cols(
   closed = col_logical()
 )
 
-processed_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020.csv", col_types = col_types) %>%
-  select(-other_acc_type, -other_request_reason, -partial, -closed)
-
-# Filter the data to only count approved requests. 2764/4509 unique requests
+# Filter the data to only count approved requests. 2108/3638 unique requests
 # are approved. We are assuming that DHCD correctly approves requests.
+# Note: 1847/2108 PEIs only show up once. Some individuals have submitted 
+# multiple approved requests.
 
-approved_adas <- processed_adas %>%
+approved_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_processed.csv", col_types = col_types) %>%
   filter(approved == "Yes") %>%
-  select(-approved)
+  mutate(dummy = 1) %>%
+  pivot_wider(names_from = request_type, 
+              values_from = dummy,
+              names_prefix = "req_a_",
+              values_fill = 0) %>%
+  clean_names() %>%
+  pivot_longer(cols = reason_1:reason_4, 
+               names_to = "reason_id", 
+               values_to = "request_reason", 
+               values_drop_na = TRUE) %>%
+  mutate(dummy = 1) %>%
+  pivot_wider(id_cols = pei:req_a_additional_bedrooms, 
+              names_from = request_reason, 
+              values_from = dummy, 
+              names_prefix = "reason_",
+              values_fill = 0) %>%
+  clean_names() %>%
+  select(!other_acc_type:closed)
 
-# Save these tibbles as compressed RDS files to be used in the Shiny app.
+# Save this tibbles as a compressed RDS file to be used in the Shiny app.
 
-saveRDS(processed_adas, file = "shiny/data/processed_adas.rds")
 saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
 
 # TODO: Clean & merge the transfer data
