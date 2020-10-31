@@ -32,24 +32,26 @@ shinyUI(
                
                tabPanel(
                    "Data",
-                   plotOutput("request_types_plot"),
+                   fluidRow(
+                     splitLayout(cellWidths = c("50%", "50%"), plotOutput("request_types_plot"), plotOutput("reason_types_plot"))
+                   ),
                    sidebarLayout(
                      sidebarPanel(
                        selectInput("accommodation_select",
                                    "Choose a specific accommodation type:",
-                                   choices = c("Placement Unit Close to Service Providers"= "Placement Unit Close to Service Providers",
-                                               "Scattered Site Placement Unit / Co-housing Unit" = "Scattered Site Placement Unit / Co-housing Unit",
-                                               "Assistance Animal within Placement Unit" = "Assistance Animal within Placement Unit",
-                                               "First Floor or Elevator Access" = "First Floor or Elevator Access",
-                                               "Non Carpeted Placement Unit" = "Non Carpeted Placement Unit",
-                                               "Change in EA Regulation / Re-Housing Plan" = "Change in EA Regulation / Re-Housing Plan",
-                                               "Physical Modification to Placement Unit" = "Physical Modification to Placement Unit",
-                                               "Access to Full Cooking Facilities" = "Access to Full Cooking Facilities",
-                                               "Wheelchair Accessible Placement Unit" = "Wheelchair Accessible Placement Unit",
-                                               "Assigned Caretaker / Temporary Non-EA Household Member" = "Assigned Caretaker / Temporary Non-EA Household Member",
-                                               "Additional bedrooms" = "Additional bedrooms",
-                                               "AC Unit" = "AC Unit",
-                                               "Other" = "Other"),
+                                   choices = c("Placement Unit Close to Service Providers"= "req_placement_unit_close_to_service_providers",
+                                               "Scattered Site Placement Unit / Co-housing Unit" = "req_scattered_site_placement_unit_co_housing_unit",
+                                               "Assistance Animal within Placement Unit" = "req_assistance_animal_within_placement_unit",
+                                               "First Floor or Elevator Access" = "req_first_floor_or_elevator_access",
+                                               "Non Carpeted Placement Unit" = "req_non_carpeted_placement_unit",
+                                               "Change in EA Regulation / Re-Housing Plan" = "req_change_in_ea_regulation_re_housing_plan",
+                                               "Physical Modification to Placement Unit" = "req_physical_modification_to_placement_unit",
+                                               "Access to Full Cooking Facilities" = "req_access_to_full_cooking_facilities",
+                                               "Wheelchair Accessible Placement Unit" = "req_wheelchair_accessible_placement_unit",
+                                               "Assigned Caretaker / Temporary Non-EA Household Member" = "req_assigned_caretaker_temporary_non_ea_household_member",
+                                               "Additional bedrooms" = "req_additional_bedrooms",
+                                               "AC Unit" = "req_ac_unit",
+                                               "Other" = "req_other"),
                                    selected = "Placement Unit Close to Service Providers",
                                    multiple = TRUE)
                      ),
