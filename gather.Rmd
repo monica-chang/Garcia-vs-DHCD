@@ -336,7 +336,7 @@ approved_reasons %>%
 ```
 
 
-```{r 2015-2019 approved ADA request tables/plots}
+```{r approved ADA request time plot}
 
 # Create a plot showing the proportion of approved ADA requests met over time.
 
@@ -361,6 +361,21 @@ approved_adas %>%
     labs(title = "Proportion of approved ADA requests that were met (2015-2019)", 
          x = "Days until accommodation was met",
          y = "Proportion of requests met")
+```
+
+```{r service provider individuals}
+
+service_provider_requests <- approved_adas %>%
+  filter(req_placement_unit_close_to_service_providers == 1) %>%
+  select(pei:how_acc_met, reason_physical_health:reason_other) %>%
+  arrange(desc(date_received)) %>%
+  mutate(zipcode = NA,
+         distance_from_provider_required = NA,
+         type_of_provider = NA,
+         misc_notes = NA)
+
+write_csv(service_provider_requests, 
+                path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/service_provider_requests.csv")
 ```
 
 
