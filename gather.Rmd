@@ -369,7 +369,7 @@ service_provider_requests <- approved_adas %>%
   filter(req_placement_unit_close_to_service_providers == 1) %>%
   select(pei:how_acc_met, reason_physical_health:reason_other) %>%
   arrange(desc(date_received)) %>%
-  mutate(zipcode = NA,
+  mutate(zipcode_of_provider = NA,
          distance_from_provider_required = NA,
          type_of_provider = NA,
          misc_notes = NA)
