@@ -392,7 +392,9 @@ external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.
                values_to = "ext_transfer_location", 
                values_drop_na = TRUE) %>%
   select(pei, ext_transfer_type, ext_transfer_location, date_ext_referral) %>%
-  
+  arrange(date_ext_referral) 
+
+saveRDS(external_transfers, file = "shiny/data/external_transfers.rds")
    
 internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transfers.xlsx") %>%
   clean_names() %>%
@@ -403,19 +405,25 @@ internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transf
                names_to = "int_transfer_type", 
                values_to = "int_transfer_location", 
                values_drop_na = TRUE) %>%
+  
+  # I filter out all internal transfer to stabilization units.
+  
   filter(str_detect(int_transfer_location, regex("Stabilization", ignore_case = TRUE)) == FALSE) %>%
-  select(pei, int_transfer_type, int_transfer_location, date_int_referral)
-
-ext_join <- left_join(approved_adas, external_transfers, by = "pei") %>%
-  filter(date_received < date_ext_referral | is.na(date_ext_referral)) %>%
-  arrange(date_ext_referral) 
-
-int_join <- left_join(approved_adas, internal_transfers, by = "pei") %>% 
-  filter(date_received < date_int_referral | is.na(date_int_referral)) %>%
+  select(pei, int_transfer_type, int_transfer_location, date_int_referral) %>%
   arrange(date_int_referral) 
 
+saveRDS(internal_transfers, file = "shiny/data/internal_transfers.rds")
 
+# I use a left_join because I want to keep all of the rows from my approved_adas
+# tibble - even if there is no corresponding internal or external transfer. I 
+# filter out cases where the date of referral is before the date the 
+# ADA application was received - because those referrals are not relevant to
+# address the disability request.
+
+ext_join <- left_join(approved_adas, external_transfers, by = "pei") %>%
+  filter(date_received < date_ext_referral | is.na(date_ext_referral)) 
   
-
+int_join <- left_join(approved_adas, internal_transfers, by = "pei") %>% 
+  filter(date_received < date_int_referral | is.na(date_int_referral))
 ```
 
