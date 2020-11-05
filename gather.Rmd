@@ -377,6 +377,7 @@ service_provider_requests <- approved_adas %>%
 write_csv(service_provider_requests, 
                 path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/service_provider_requests.csv")
 ```
+
 ```{r clean transfer data}
 
 external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.xlsx") %>%
@@ -385,12 +386,13 @@ external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.
          hotel_placement = site_to_program_name,
          non_hotel_placement = entity_to,
          date_ext_referral = date_referral_was_accepted_or_rejected) %>%
+  mutate(pei = gsub("-", "", pei)) %>%
   pivot_longer(cols = hotel_placement:non_hotel_placement, 
                names_to = "ext_transfer_type", 
                values_to = "ext_transfer_location", 
                values_drop_na = TRUE) %>%
   select(pei, ext_transfer_type, ext_transfer_location, date_ext_referral) %>%
-  mutate(pei = gsub("-", "", pei)) 
+  
    
 internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transfers.xlsx") %>%
   clean_names() %>%
@@ -404,8 +406,13 @@ internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transf
   filter(str_detect(int_transfer_location, regex("Stabilization", ignore_case = TRUE)) == FALSE) %>%
   select(pei, int_transfer_type, int_transfer_location, date_int_referral)
 
-left_join(approved_adas, external_transfers, by = "pei") %>% View()
-left_join(approved_adas, internal_transfers, by = "pei") %>% View()
+ext_join <- left_join(approved_adas, external_transfers, by = "pei") %>%
+  filter(date_received < date_ext_referral | is.na(date_ext_referral)) %>%
+  arrange(date_ext_referral) 
+
+int_join <- left_join(approved_adas, internal_transfers, by = "pei") %>% 
+  filter(date_received < date_int_referral | is.na(date_int_referral)) %>%
+  arrange(date_int_referral) 
 
 
   
