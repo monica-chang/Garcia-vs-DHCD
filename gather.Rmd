@@ -364,7 +364,6 @@ approved_adas %>%
 ```
 
 ```{r service provider individuals}
-
 service_provider_requests <- approved_adas %>%
   filter(req_placement_unit_close_to_service_providers == 1) %>%
   select(pei:how_acc_met, reason_physical_health:reason_other) %>%
@@ -385,34 +384,37 @@ external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.
   rename(pei = participant_enterprise_identifier,
          hotel_placement = site_to_program_name,
          non_hotel_placement = entity_to,
-         date_ext_referral = date_referral_was_accepted_or_rejected) %>%
+         date_referral = date_referral_was_accepted_or_rejected) %>%
   mutate(pei = gsub("-", "", pei)) %>%
   pivot_longer(cols = hotel_placement:non_hotel_placement, 
-               names_to = "ext_transfer_type", 
-               values_to = "ext_transfer_location", 
+               names_to = "transfer_type_specific", 
+               values_to = "transfer_location", 
                values_drop_na = TRUE) %>%
-  select(pei, ext_transfer_type, ext_transfer_location, date_ext_referral) %>%
-  arrange(date_ext_referral) 
-
-saveRDS(external_transfers, file = "shiny/data/external_transfers.rds")
+  mutate(transfer_type = "external") %>%
+  select(pei, transfer_type, transfer_type_specific, transfer_location, date_referral) %>%
+  arrange(date_referral) 
    
 internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transfers.xlsx") %>%
   clean_names() %>%
   rename(pei = participant_enterprise_identifier,
-         date_int_referral = referral_date) %>%
+         date_referral = referral_date) %>%
   mutate(pei = gsub("-", "", pei)) %>%
   pivot_longer(cols = site_to:entity_to, 
-               names_to = "int_transfer_type", 
-               values_to = "int_transfer_location", 
+               names_to = "transfer_type_specific", 
+               values_to = "transfer_location", 
                values_drop_na = TRUE) %>%
   
   # I filter out all internal transfer to stabilization units.
   
-  filter(str_detect(int_transfer_location, regex("Stabilization", ignore_case = TRUE)) == FALSE) %>%
-  select(pei, int_transfer_type, int_transfer_location, date_int_referral) %>%
-  arrange(date_int_referral) 
+  filter(str_detect(transfer_location, regex("Stabilization", ignore_case = TRUE)) == FALSE) %>%
+  mutate(transfer_type = "internal") %>%
+  select(pei, transfer_type, transfer_type_specific, transfer_location, date_referral) %>%
+  arrange(date_referral) 
 
-saveRDS(internal_transfers, file = "shiny/data/internal_transfers.rds")
+transfers <- bind_rows(external_transfers, internal_transfers) %>%
+  arrange(date_referral)
+
+saveRDS(transfers, file = "shiny/data/transfers.rds")
 
 # I use a left_join because I want to keep all of the rows from my approved_adas
 # tibble - even if there is no corresponding internal or external transfer. I 
@@ -420,10 +422,15 @@ saveRDS(internal_transfers, file = "shiny/data/internal_transfers.rds")
 # ADA application was received - because those referrals are not relevant to
 # address the disability request.
 
-ext_join <- left_join(approved_adas, external_transfers, by = "pei") %>%
-  filter(date_received < date_ext_referral | is.na(date_ext_referral)) 
+adas_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
+  filter(date_received < date_referral | is.na(date_referral) | is.na(date_received)) %>%
+  distinct() 
+
+ada_transfers %>%
+  group_by(pei) %>%
+  summarize(num_transfers = n()) %>%
+  arrange(desc(num_transfers))
   
-int_join <- left_join(approved_adas, internal_transfers, by = "pei") %>% 
-  filter(date_received < date_int_referral | is.na(date_int_referral))
+
 ```
 
