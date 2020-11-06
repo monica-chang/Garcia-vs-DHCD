@@ -422,7 +422,7 @@ saveRDS(transfers, file = "shiny/data/transfers.rds")
 # ADA application was received - because those referrals are not relevant to
 # address the disability request.
 
-adas_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
+ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
   filter(date_received < date_referral | is.na(date_referral) | is.na(date_received)) %>%
   distinct() 
 
@@ -430,7 +430,16 @@ ada_transfers %>%
   group_by(pei) %>%
   summarize(num_transfers = n()) %>%
   arrange(desc(num_transfers))
-  
+
+# When I’m merging the data, it’s looking like each individual can have multiple
+# internal and external transfers (which makes sense) as well as multiple ADA 
+# requests. My question is - which transfer should I be associating with each 
+# request? 
+
+# The transfer date that is the soonest after the request received date? 
+# The request decision date? Request decision if request received is not available?
+
+# Within 30 days? 60 days? The most recent transfer date in general?
 
 ```
 
