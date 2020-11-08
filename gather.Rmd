@@ -363,19 +363,10 @@ approved_adas %>%
          y = "Proportion of requests met")
 ```
 
-```{r service provider individuals}
-service_provider_requests <- approved_adas %>%
-  filter(req_placement_unit_close_to_service_providers == 1) %>%
-  select(pei:how_acc_met, reason_physical_health:reason_other) %>%
-  arrange(desc(date_received)) %>%
-  mutate(zipcode_of_provider = NA,
-         distance_from_provider_required = NA,
-         type_of_provider = NA,
-         misc_notes = NA)
 
-write_csv(service_provider_requests, 
-                path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/service_provider_requests.csv")
-```
+
+
+
 
 ```{r clean transfer data}
 
@@ -424,22 +415,78 @@ saveRDS(transfers, file = "shiny/data/transfers.rds")
 
 ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
   filter(date_received < date_referral | is.na(date_referral) | is.na(date_received)) %>%
-  distinct() 
+  distinct() %>%
 
-ada_transfers %>%
-  group_by(pei) %>%
-  summarize(num_transfers = n()) %>%
-  arrange(desc(num_transfers))
+# 87 approved requests have no date_received recorded.
+# We will substitute date_received with the date_decision + the mean of the diff 
+# between date_received and date_decision.
 
-# When I’m merging the data, it’s looking like each individual can have multiple
-# internal and external transfers (which makes sense) as well as multiple ADA 
-# requests. My question is - which transfer should I be associating with each 
-# request? 
+  mutate(days_btwn_decision_received = as.double(difftime(lubridate::ymd(date_decision),
+                                                             lubridate::ymd(date_received),
+                                                             units = "days"))) %>%
+  mutate(mean_days_btwn_decision_received = mean(days_btwn_decision_received, na.rm = TRUE)) %>%
+  mutate(date_received = if_else(is.na(date_received), 
+                                 as.Date(date_decision) - mean_days_btwn_decision_received,
+                                 as.Date(date_received))) %>%
+  mutate(days_until_accommodation_met = as.double(difftime(lubridate::ymd(date_acc_met),
+                                                           lubridate::ymd(date_received),
+                                                           units = "days"))) %>%
+  select(pei:date_received, date_decision:date_referral)
 
-# The transfer date that is the soonest after the request received date? 
-# The request decision date? Request decision if request received is not available?
+# Each individual can have multiple internal and external transfers as well as 
+# multiple ADA requests. Since we have no certain way of knowing which transfer 
+# met which ADA request- I will track whether the most recent request was met 
+# at each transfer. We are assuming that once the individual's needs are met 
+# once, the request was met. E.g. If request was met at transfer 5, that
+# date_referral is the new date_acc_met.
 
-# Within 30 days? 60 days? The most recent transfer date in general?
+# NOTE: This will be an undercount because someone could have repeated additive 
+# requests.
 
+# In the future, DHCD should include info on the temporary/permanent nature of 
+# the need in their data collection. Mental health needs are probably not 
+# temporary. We may want to do more specific analysis.
+
+# TODO: Merge in bed registry characteristics to see whether each transfer meets someone's request. 
+# I can only do this for placement unit requests (not service providers).
+# Filter out requests that don't meet request. Use the date from that request as new date_acc_met.
+
+```
+
+```{r generating misc spreadsheets as requested}
+
+# Generate a spreadsheet of requests that include a service provider acc.
+
+service_provider_requests <- approved_adas %>%
+  filter(req_placement_unit_close_to_service_providers == 1) %>%
+  select(pei:how_acc_met, reason_physical_health:reason_other) %>%
+  arrange(desc(date_received)) %>%
+  mutate(zipcode_of_provider = NA,
+         distance_from_provider_required = NA,
+         type_of_provider = NA,
+         misc_notes = NA)
+
+write_csv(service_provider_requests, 
+                path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/service_provider_requests.csv")
+
+# Generate a spreadsheet of approved ADAs who have "NA" for date_received.
+
+approved_adas_na_date <- approved_adas %>%
+  filter(is.na(date_received))
+
+write_csv(approved_adas_na_date, 
+                path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/approved_adas_na_date.csv")
+
+# Generate a spreadsheet of people who underwent a ton of transfers (10+). 
+# that may require follow-up for Laura.
+
+ada_many_transfers <- ada_transfers %>%
+  group_by(pei, name) %>%
+  summarize(num_transfers = n(), .groups = "keep") %>%
+  arrange(desc(num_transfers)) %>%
+  filter(num_transfers > 5)
+
+write_csv(ada_many_transfers, 
+                path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/approved_adas_many_tranfers.csv")
 ```
 
