@@ -175,7 +175,7 @@ write_csv(ada_request_2018_2020,
 # After doing the above data cleaning, I manually went through the data 
 # to account for partial approvals that provided sufficient information to 
 # determine whether a unique accommodation request was approved or not. 
-# Note: 32 partial approval did not provide sufficient information to 
+# Note: 32 partial approvals did not provide sufficient information to 
 # manually input approval data so they were not counted.
 
 # I also manually went through the "other" categories for request type and 
@@ -252,9 +252,6 @@ approved_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50
 
 saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
 
-# TODO: Clean & merge the transfer data
-# TODO: Clean & merge HUD exit data. 
-# TODO: Clean & merge bed registry characteristics.
 ```
 
 
@@ -364,11 +361,52 @@ approved_adas %>%
 ```
 
 
+```{r clean bed registry data}
 
+# I clean the data on shelter characteristics to select relevant columns. 
+# This tibble provides information on whether each location meets certain 
+# unit_type accommodations (scattered site, bedrooms, first floor, elevator,
+# visual/hearing impairment, AC, carpeting, wheelchair accessible).
+
+# Note: This information cannot address hotel placements or the following types
+# of accommodations: 
+# req_placement_unit_close_to_service_providers (1201), 
+# req_other (212)
+# req_assistance_animal_within_placement_unit (151) 
+# req_access_to_full_cooking_facilities (42)
+# req_change_in_ea_regulation_re_housing_plan (27)
+# req_assigned_caretaker_temporary_non_ea_household_member (5) 
+
+shelter_characteristics <- read_excel("raw_data/DHCD6_126075.xlsx") %>%
+  clean_names() %>% 
+  
+  # I replace the values in the accommodation columns to display 1 when the
+  # accommodation exists and 0 when the accommodation does not exist.
+  
+  mutate_at(vars(visually_impaired:public_transportation_accessible), ~ifelse(. == "Yes", 1, 0)) %>%
+  
+  # I replace the values in the unit_type column to display 1 when the
+  # unit type is either a scattered site or co-shelter site, a 2 when the site 
+  # is a congregate shelter, and 0 when the unit_type information is not given.
+  
+  mutate_at(vars(unit_type), ~ifelse(. == "Scattered Sites" | . == 
+                                       "Co-Shelter", 1, ifelse(. == "Congregate", 2, 0))) %>%
+  mutate(ffloor_elevator = ifelse(floor == 1 | elevator == 1, 1, 0)) %>%
+  mutate(phys_mod = ifelse(visually_impaired == 1 | hearing_impaired == 1, 1, 0)) %>%
+  mutate(non_carpeted = ifelse(carpeting == 1, 0, 1)) %>%
+  select(name, site, program_name, city, zip_code, unit_type, bedrooms, floor, visually_impaired:public_transportation_accessible, ffloor_elevator, phys_mod, non_carpeted)
+  
+```
 
 
 
 ```{r clean transfer data}
+
+# I clean and merge the data on internal transfers (transfers within a program 
+# e.g. from Heading Home Congregate Shelter to a Heading Home Scattered Site) 
+# and external transfers (transfers from one site to another e.g. from Heading 
+# Home to JRI) by renaming appropriate columns, pivoting the data longer, 
+# and row binding.
 
 external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.xlsx") %>%
   clean_names() %>%
@@ -395,7 +433,7 @@ internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transf
                values_to = "transfer_location", 
                values_drop_na = TRUE) %>%
   
-  # I filter out all internal transfer to stabilization units.
+  # I filter out all internal transfers to stabilization units.
   
   filter(str_detect(transfer_location, regex("Stabilization", ignore_case = TRUE)) == FALSE) %>%
   mutate(transfer_type = "internal") %>%
@@ -422,8 +460,8 @@ ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
 # between date_received and date_decision.
 
   mutate(days_btwn_decision_received = as.double(difftime(lubridate::ymd(date_decision),
-                                                             lubridate::ymd(date_received),
-                                                             units = "days"))) %>%
+                                                          lubridate::ymd(date_received),
+                                                          units = "days"))) %>%
   mutate(mean_days_btwn_decision_received = mean(days_btwn_decision_received, na.rm = TRUE)) %>%
   mutate(date_received = if_else(is.na(date_received), 
                                  as.Date(date_decision) - mean_days_btwn_decision_received,
@@ -435,7 +473,7 @@ ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
 
 # Each individual can have multiple internal and external transfers as well as 
 # multiple ADA requests. Since we have no certain way of knowing which transfer 
-# met which ADA request- I will track whether the most recent request was met 
+# met which ADA request - I will track whether the most recent request was met 
 # at each transfer. We are assuming that once the individual's needs are met 
 # once, the request was met. E.g. If request was met at transfer 5, that
 # date_referral is the new date_acc_met.
@@ -449,7 +487,50 @@ ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
 
 # TODO: Merge in bed registry characteristics to see whether each transfer meets someone's request. 
 # I can only do this for placement unit requests (not service providers).
-# Filter out requests that don't meet request. Use the date from that request as new date_acc_met.
+# Filter out requests that don't meet request.
+# Use the date from that request as new date_acc_met.
+
+ada_transfers_include_chars <-
+  left_join(ada_transfers, shelter_characteristics, by = c("transfer_location" = "name")) %>% 
+  
+  # I coded placement_acc_met as 
+  # - 2 if the individual did not request any unit type accommodations
+  # - 1 if the individual had their unit type accommodations met
+  # - 0 if the individual had their unit type accommodations not met
+  # - NA if we had no characteristic info on the transfer location
+  
+  mutate(placement_acc_met = ifelse(req_scattered_site_placement_unit_co_housing_unit == 0 &
+                                    req_first_floor_or_elevator_access == 0 &
+                                    req_physical_modification_to_placement_unit == 0 &
+                                    req_ac_unit == 0 &
+                                    req_non_carpeted_placement_unit == 0 &
+                                    req_wheelchair_accessible_placement_unit == 0, 
+                             2, 
+                             ifelse(req_scattered_site_placement_unit_co_housing_unit <= unit_type &
+                                    req_first_floor_or_elevator_access <= ffloor_elevator &
+                                    req_physical_modification_to_placement_unit <= phys_mod &
+                                    req_ac_unit <= air_conditioning &
+                                    req_non_carpeted_placement_unit <= non_carpeted &
+                                    req_wheelchair_accessible_placement_unit <= wheelchair_accessible, 1, 0))) %>%
+  select(pei:req_assigned_caretaker_temporary_non_ea_household_member, 
+         transfer_type:non_carpeted, placement_acc_met)
+
+# TODO:
+
+# I can account for non_hotel placement (external) and entity_to (internal).
+# program_to and hotel_placement aren't accounted for now.
+#   - filter out program_to
+#   - determine what characteristics all hotels have (create assumption)
+#   - look at legal standards for hotels/if chars exist somewhere
+
+# non-placement accommodations aren't accounted for (filter out)
+
+# filter to the correct transfer 
+# - if placement_acc_met = 1
+# -   choose the earliest one that meets the need
+# - if request was never met, ?
+
+# TODO: Clean & merge HUD exit data. 
 
 ```
 
