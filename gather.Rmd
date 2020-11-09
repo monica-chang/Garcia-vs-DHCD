@@ -515,20 +515,25 @@ ada_transfers_include_chars <-
   select(pei:req_assigned_caretaker_temporary_non_ea_household_member, 
          transfer_type:non_carpeted, placement_acc_met)
 
+ada_transfers_include_chars %>%
+  group_by(transfer_type, transfer_type_specific) %>%
+  summarize(num_requests = n())
+
 # TODO:
 
 # I can account for non_hotel placement (external) and entity_to (internal).
 # program_to and hotel_placement aren't accounted for now.
-#   - filter out program_to
+#   - filter out program_to?
 #   - determine what characteristics all hotels have (create assumption)
 #   - look at legal standards for hotels/if chars exist somewhere
 
 # non-placement accommodations aren't accounted for (filter out)
 
 # filter to the correct transfer 
+# for each pei-date combo,
 # - if placement_acc_met = 1
 # -   choose the earliest one that meets the need
-# - if request was never met, ?
+# - if request was never met, set a 1-year censorship date for date_acc_met.
 
 # TODO: Clean & merge HUD exit data. 
 
