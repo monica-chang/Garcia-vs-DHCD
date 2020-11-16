@@ -290,7 +290,7 @@ approved_requests %>%
     scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Change in regulation/re-housing plan", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Non-carpeted", "Assistance animal", "First floor/elevator",  "Other", "Scattered site/Co-housing", "Service providers")) +
     labs(title = "Percentage of approved ADA requests \nby accommodation type (2015-2019)",
          subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
-         x = "Percentage of approved requests", 
+         x = "Proportion of approved requests", 
          y = "Accommodation type",
          caption = "Source: Department of Housing & Community Development")
 
@@ -325,7 +325,7 @@ approved_reasons %>%
     geom_col() +
     theme_linedraw() +
     scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
-    labs(title = "Percentage of approved ADA requests \nby reason type (2015-2019)",
+    labs(title = "Proportion of approved ADA requests \nby reason type (2015-2019)",
          x = "Percentage of approved requests", 
          y = "Reason type",
          caption = "Source: Department of Housing & Community Development")
@@ -408,12 +408,20 @@ shelter_characteristics <- read_excel("raw_data/DHCD6_126075.xlsx") %>%
 # Home to JRI) by renaming appropriate columns, pivoting the data longer, 
 # and row binding.
 
+col_types <- cols(
+  .default = col_character(),
+  date_referral_was_accepted_or_rejected = col_datetime(format = "")
+)
+
 external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.xlsx") %>%
   clean_names() %>%
   rename(pei = participant_enterprise_identifier,
          hotel_placement = site_to_program_name,
          non_hotel_placement = entity_to,
-         date_referral = date_referral_was_accepted_or_rejected) %>%
+         date_referral = date_referral_was_accepted_or_rejected)
+
+external_transfers <- 
+  transform(external_transfers, date_referral = as_datetime(date_referral)) %>%
   mutate(pei = gsub("-", "", pei)) %>%
   pivot_longer(cols = hotel_placement:non_hotel_placement, 
                names_to = "transfer_type_specific", 
@@ -470,6 +478,9 @@ ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
                                                            lubridate::ymd(date_received),
                                                            units = "days"))) %>%
   select(pei:date_received, date_decision:date_referral)
+```
+
+```{r merge transfers and shelter characteristics}
 
 # Each individual can have multiple internal and external transfers as well as 
 # multiple ADA requests. Since we have no certain way of knowing which transfer 
@@ -481,17 +492,26 @@ ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
 # NOTE: This will be an undercount because someone could have repeated additive 
 # requests.
 
-# In the future, DHCD should include info on the temporary/permanent nature of 
-# the need in their data collection. Mental health needs are probably not 
-# temporary. We may want to do more specific analysis.
+# NOTE: In the future, DHCD should include info on the temporary/permanent 
+# nature of the need in their data collection. Mental health needs are probably 
+# not temporary. We may want to do more specific analysis on mental health.
 
-# TODO: Merge in bed registry characteristics to see whether each transfer meets someone's request. 
-# I can only do this for placement unit requests (not service providers).
-# Filter out requests that don't meet request.
-# Use the date from that request as new date_acc_met.
+# I use a left join because I want to keep all of the rows from my ada_transfers
+# tibble - even if there is no corresponding shelter characteristic information.
+# This merge will allow me to see whether the location the individual was 
+# transferred to meets that individual's disability accommodation request.
 
-ada_transfers_include_chars <-
-  left_join(ada_transfers, shelter_characteristics, by = c("transfer_location" = "name")) %>% 
+# Externally, there are 156 hotel placements & 1692 non-hotel placements.
+# Internally, there are 1295 entity_to transfers.
+# 26 transfers are NA - there is no information on transfer_type provided.
+
+# I am able to account for non_hotel placement and entity_to transfers
+# using my shelter characteristics dataset. Because I do not have information
+# on the characteristics of hotels, I will run a scenario where a hotel meets 
+# all unit type accommodations and a scenario where a hotel doesn't meet any.
+
+transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
+  x <- left_join(transfers, chars, by = c("transfer_location" = "name")) %>% 
   
   # I coded placement_acc_met as 
   # - 2 if the individual did not request any unit type accommodations
@@ -512,30 +532,62 @@ ada_transfers_include_chars <-
                                     req_ac_unit <= air_conditioning &
                                     req_non_carpeted_placement_unit <= non_carpeted &
                                     req_wheelchair_accessible_placement_unit <= wheelchair_accessible, 1, 0))) %>%
+
+  mutate(placement_acc_met = ifelse(hotel == TRUE & transfer_type_specific == "hotel_placement", 1, 
+                             ifelse(hotel == TRUE & transfer_type_specific != "hotel_placement", placement_acc_met,
+                             ifelse(hotel == FALSE & transfer_type_specific == "hotel_placement", 0, 
+                             ifelse(hotel == FALSE & transfer_type_specific != "hotel_placement", placement_acc_met, placement_acc_met))))) %>%    
+                                   
+  # Every program_to transfer is followed by a more specific entity_to transfer, 
+  # so I can filter these transfers out.
+  
+  filter(transfer_type_specific != "program_to") %>%
   select(pei:req_assigned_caretaker_temporary_non_ea_household_member, 
          transfer_type:non_carpeted, placement_acc_met)
+}
 
-ada_transfers_include_chars %>%
-  group_by(transfer_type, transfer_type_specific) %>%
-  summarize(num_requests = n())
+# Tibble generated when we make the assumption that a hotel transfer meets all
+# unit type accommodations.
 
-# TODO:
+transfers_chars_hotel_t <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = TRUE)
 
-# I can account for non_hotel placement (external) and entity_to (internal).
-# program_to and hotel_placement aren't accounted for now.
-#   - filter out program_to?
-#   - determine what characteristics all hotels have (create assumption)
-#   - look at legal standards for hotels/if chars exist somewhere
+# Tibble generated when we make the assumption that a hotel transfer meets no
+# unit type accommodations.
 
-# non-placement accommodations aren't accounted for (filter out)
+transfers_chars_hotel_f <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = FALSE)
 
-# filter to the correct transfer 
-# for each pei-date combo,
-# - if placement_acc_met = 1
-# -   choose the earliest one that meets the need
-# - if request was never met, set a 1-year censorship date for date_acc_met.
+transfers_chars_hotel_t %>%
+  
+  # I am filtering out requests that do not contain unit type accommodations 
+  # because I have insufficient data to account for placement close to service
+  # providers, other, assistance animals, access to full cooking facilities, 
+  # change in EA regulation, and assigned caretaker. Only 1282/3143 rows remain.
+  
+  filter(placement_acc_met != 2) %>%
+  group_by(pei, date_received) %>%
+  arrange(date_received) %>%
+  group_modify( ~ {
+    .x %>%
+      arrange(date_referral) %>%
+      mutate(date_acc_met = ifelse(nrow(.x %>% filter(placement_acc_met == 1)) >= 1, 
+                                   head(.x %>% filter(placement_acc_met == 1))$date_referral,
+                                   NA))
+    }) %>% View()
+
+# Filter to the correct transfer 
+# For each pei-date combo,
+# - If placement_acc_met = 1
+#    - Keep the earliest one that meets the need and get rid of the other rows.
+# - If request was never met, set a 1-year censorship date for date_acc_met. Keep the earliest row.
 
 # TODO: Clean & merge HUD exit data. 
+
+# After we have a Kaplan-Meier plot that is more reliable, we may be able to have 
+# a binary question (was this request met within 30 days or not) and identify
+# a reasonable cut off date. Percentages are easier to understand.
+
+# Is there demographic information for these individuals? 
+# Do they only track for head of household or each individual?
 
 ```
 
