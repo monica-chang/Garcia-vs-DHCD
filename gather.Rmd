@@ -355,19 +355,24 @@ approved_reasons %>%
 # Note: 1484/2108 (70%) of the date_acc_met values are missing! 
 # We will need transfer/bed registry data to supplement these missing values.
          
-approved_adas %>%
-  filter(days_until_accommodation_met >= 0) %>% 
-  group_by(days_until_accommodation_met) %>%
-  summarize(num_requests_met = n(), .groups = "drop") %>%
-  mutate(prop_requests_met = num_requests_met/nrow(approved_adas)) %>%
-  mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
-  ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
-    geom_line() + 
-    xlim(0, 100) +
-    ylim(0, 1) +
-    labs(title = "Proportion of approved ADA requests that were met (2015-2019)", 
-         x = "Days until accommodation was met",
-         y = "Proportion of requests met")
+create_kaplan_meier <- function(df){
+  df %>%
+    filter(days_until_accommodation_met >= 0) %>% 
+    group_by(days_until_accommodation_met) %>%
+    summarize(num_requests_met = n(), .groups = "drop") %>%
+    mutate(prop_requests_met = num_requests_met/nrow(df)) %>%
+    mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
+    ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
+      geom_line() + 
+      xlim(0, 400) +
+      ylim(0, 1) +
+      labs(title = "Proportion of requests that were met (2015-2019)", 
+           x = "Days until accommodation was met",
+           y = "Proportion of requests met")
+}
+
+create_kaplan_meier(approved_adas)
+create_kaplan_meier(clean_ada_transfers)
 ```
 
 
@@ -377,6 +382,10 @@ approved_adas %>%
 # This tibble provides information on whether each location meets certain 
 # unit_type accommodations (scattered site, bedrooms, first floor, elevator,
 # visual/hearing impairment, AC, carpeting, wheelchair accessible).
+
+# Externally, there are 156 hotel placements & 1692 non-hotel placements.
+# Internally, there are 1295 entity_to transfers.
+# 26 transfers are NA - there is no information on transfer_type provided.
 
 # Note: This information cannot address hotel placements or the following types
 # of accommodations: 
@@ -459,13 +468,9 @@ transfers <- bind_rows(external_transfers, internal_transfers) %>%
 saveRDS(transfers, file = "shiny/data/transfers.rds")
 
 # I use a left_join because I want to keep all of the rows from my approved_adas
-# tibble - even if there is no corresponding internal or external transfer. I 
-# filter out cases where the date of referral is before the date the 
-# ADA application was received - because those referrals are not relevant to
-# address the disability request.
+# tibble - even if there is no corresponding internal or external transfer. 
 
 ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
-  filter(date_received < date_referral | is.na(date_referral) | is.na(date_received)) %>%
   
   # We are only interested in requests for a service provider, scattered site,
   # first floor, wheelchair accessible, or additional bedrooms since these are
@@ -482,21 +487,31 @@ ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
   mutate(days_btwn_decision_received = as.double(difftime(ymd(date_decision),
                                                           ymd(date_received),
                                                           units = "days"))) %>%
+  
+  # The mean difference is 22.7 - which rounds up to about 23 days.
+  
   mutate(mean_days_btwn_decision_received = mean(days_btwn_decision_received, na.rm = TRUE)) %>%
-  mutate(date_received = if_else(is.na(date_received), 
-                                 as.Date(date_decision) - mean_days_btwn_decision_received,
-                                 as.Date(date_received))) %>%
-  mutate(days_until_accommodation_met = as.double(difftime(ymd(date_acc_met),
-                                                           ymd(date_received),
-                                                           units = "days"))) %>%
+  mutate(date_received = ifelse(is.na(date_received), 
+                                date_decision - days(23),
+                                date_received)) %>%
+
+  # I filter out cases where the date of referral is before the date the 
+  # ADA application was received - because those referrals are not relevant to
+  # address the disability request.
+  
+  mutate(date_received = strptime("1970-01-01 00:00:00", "%Y-%m-%d %H:%M:%S") + date_received) %>%
+  filter(date_received <= date_referral | is.na(date_referral) | is.na(date_received)) %>%
   select(pei:date_received, date_decision:date_referral)
 ```
 
 ```{r merge transfers and shelter characteristics}
 
-# Externally, there are 156 hotel placements & 1692 non-hotel placements.
-# Internally, there are 1295 entity_to transfers.
-# 26 transfers are NA - there is no information on transfer_type provided.
+# This function take in 3 arguments: 
+# - a tibble formatted like ada_transfers
+# - a tibble formatted like shelter_characteristics
+# - a logical to indicate whether we assume a hotel successfully meets all 
+#   unit type accommodations
+# This function returns a merged tibble of transfers and shelter characteristics.
 
 transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
   
@@ -515,16 +530,10 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
   
   mutate(placement_acc_met = ifelse(req_scattered_site_placement_unit_co_housing_unit == 0 &
                                     req_first_floor_or_elevator_access == 0 &
-                                    req_physical_modification_to_placement_unit == 0 &
-                                    req_ac_unit == 0 &
-                                    req_non_carpeted_placement_unit == 0 &
                                     req_wheelchair_accessible_placement_unit == 0, 
                              2, 
                              ifelse(req_scattered_site_placement_unit_co_housing_unit <= unit_type &
                                     req_first_floor_or_elevator_access <= ffloor_elevator &
-                                    req_physical_modification_to_placement_unit <= phys_mod &
-                                    req_ac_unit <= air_conditioning &
-                                    req_non_carpeted_placement_unit <= non_carpeted &
                                     req_wheelchair_accessible_placement_unit <= wheelchair_accessible, 1, 0))) %>%
     
   # I am able to account for non_hotel placement and entity_to transfers
@@ -554,6 +563,9 @@ transfers_chars_hotel_t <- transfers_include_chars(ada_transfers, shelter_charac
 # unit type accommodations.
 
 transfers_chars_hotel_f <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = FALSE)
+```
+
+```{r clean ada trannsfers}
 
 # Each individual can have multiple internal and external transfers as well as 
 # multiple ADA requests. Since we have no certain way of knowing which transfer 
@@ -577,9 +589,9 @@ supplement_date_acc_met <- function(df){
   df %>%
   
     # I am filtering out requests that do not contain unit type accommodations 
-    # because I have insufficient data to account for placement close to service
-    # providers, other, assistance animals, access to full cooking facilities, 
-    # change in EA regulation, and assigned caretaker. Only 1282/3143 rows remain.
+    # because I have insufficient info to account for non-unit type 
+    # accommodations (scattered site, first floor, wheelchair).
+    # Only 1101/2620 rows remain.
     
     filter(placement_acc_met != 2) %>%
     
@@ -605,15 +617,21 @@ supplement_date_acc_met <- function(df){
                                  
                                  ifelse(placement_acc_met == 1, 
                                         date_referral, 
-                                        date_received))) %>%
-    mutate(date_acc_met = strptime("1970-01-01", "%Y-%m-%d", tz="GMT") + date_acc_met) %>%
-    mutate(date_acc_met = ymd(date_acc_met)) %>%
-    mutate(days_until_accommodation_met = as.double(difftime(ymd(date_acc_met),
-                                                             ymd(date_received),
+                                        date_received + days(365)))) %>%
+    mutate(date_acc_met = strptime("1970-01-01", "%Y-%m-%d") + date_acc_met) %>%
+    mutate(date_received = format(date_received,format='%Y-%m-%d')) %>%
+    mutate(date_acc_met = format(date_acc_met,format='%Y-%m-%d')) %>%
+    mutate(days_until_accommodation_met = as.double(difftime(date_acc_met,
+                                                             date_received,
                                                              units = "days")))
 }
 
-supplement_date_acc_met(transfers_chars_hotel_t)
+# 671 rows.
+
+clean_ada_transfers <- supplement_date_acc_met(transfers_chars_hotel_t)
+  
+
+# C27626
 
 # TODO: Clean & merge HUD exit data. 
 
