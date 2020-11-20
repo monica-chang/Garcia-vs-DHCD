@@ -15,6 +15,9 @@ library(readxl)
 library(lubridate)
 library(skimr)
 library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
 ```
 
 
@@ -229,10 +232,17 @@ approved_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50
               names_prefix = "reason_",
               values_fill = 0) %>%
   clean_names() %>%
+  mutate(date_received = as.character(date_received)) %>%
+  mutate(date_received = as.POSIXct(date_received)) %>%
+  mutate(interesting = ifelse(req_placement_unit_close_to_service_providers == 1 |
+                              req_scattered_site_placement_unit_co_housing_unit == 1 |
+                              req_first_floor_or_elevator_access == 1 |
+                              req_wheelchair_accessible_placement_unit == 1 |
+                              req_additional_bedrooms == 1, 1, 0)) %>%
   
   # I specify the column order that I want.
   
-  select(pei:hotel_from, acc_met, how_acc_met,
+  select(pei:hotel_from, acc_met, how_acc_met, interesting,
          req_placement_unit_close_to_service_providers,
          req_scattered_site_placement_unit_co_housing_unit,
          req_other,
@@ -288,7 +298,7 @@ approved_requests %>%
     geom_col() +
     theme_bw() +
     scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Change in regulation/re-housing plan", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Non-carpeted", "Assistance animal", "First floor/elevator",  "Other", "Scattered site/Co-housing", "Service providers")) +
-    labs(title = "Percentage of approved ADA requests \nby accommodation type (2015-2019)",
+    labs(title = "Proportion of approved ADA requests \nby accommodation type (2015-2019)",
          subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
          x = "Proportion of approved requests", 
          y = "Accommodation type",
@@ -326,7 +336,7 @@ approved_reasons %>%
     theme_linedraw() +
     scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
     labs(title = "Proportion of approved ADA requests \nby reason type (2015-2019)",
-         x = "Percentage of approved requests", 
+         x = "Proportion of approved requests", 
          y = "Reason type",
          caption = "Source: Department of Housing & Community Development")
 
@@ -408,28 +418,22 @@ shelter_characteristics <- read_excel("raw_data/DHCD6_126075.xlsx") %>%
 # Home to JRI) by renaming appropriate columns, pivoting the data longer, 
 # and row binding.
 
-col_types <- cols(
-  .default = col_character(),
-  date_referral_was_accepted_or_rejected = col_datetime(format = "")
-)
-
 external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.xlsx") %>%
   clean_names() %>%
   rename(pei = participant_enterprise_identifier,
          hotel_placement = site_to_program_name,
          non_hotel_placement = entity_to,
-         date_referral = date_referral_was_accepted_or_rejected)
-
-external_transfers <- 
-  transform(external_transfers, date_referral = as_datetime(date_referral)) %>%
+         date_referral = date_referral_was_accepted_or_rejected) %>%
   mutate(pei = gsub("-", "", pei)) %>%
+  mutate(date_referral = ymd_hms(date_referral)) %>%
   pivot_longer(cols = hotel_placement:non_hotel_placement, 
                names_to = "transfer_type_specific", 
                values_to = "transfer_location", 
                values_drop_na = TRUE) %>%
   mutate(transfer_type = "external") %>%
   select(pei, transfer_type, transfer_type_specific, transfer_location, date_referral) %>%
-  arrange(date_referral) 
+  arrange(date_referral) %>%
+  mutate(date_referral = ymd_hms(date_referral)) 
    
 internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transfers.xlsx") %>%
   clean_names() %>%
@@ -446,7 +450,8 @@ internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transf
   filter(str_detect(transfer_location, regex("Stabilization", ignore_case = TRUE)) == FALSE) %>%
   mutate(transfer_type = "internal") %>%
   select(pei, transfer_type, transfer_type_specific, transfer_location, date_referral) %>%
-  arrange(date_referral) 
+  arrange(date_referral) %>%
+  mutate(date_referral = ymd_hms(date_referral)) 
 
 transfers <- bind_rows(external_transfers, internal_transfers) %>%
   arrange(date_referral)
@@ -461,56 +466,45 @@ saveRDS(transfers, file = "shiny/data/transfers.rds")
 
 ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
   filter(date_received < date_referral | is.na(date_referral) | is.na(date_received)) %>%
+  
+  # We are only interested in requests for a service provider, scattered site,
+  # first floor, wheelchair accessible, or additional bedrooms since these are
+  # the only kinds of requests that cannot be met without a transfer. 
+  # 3079/3595 rows remain.
+  
+  filter(interesting == 1) %>%
   distinct() %>%
 
-# 87 approved requests have no date_received recorded.
-# We will substitute date_received with the date_decision + the mean of the diff 
-# between date_received and date_decision.
+  # 87 approved requests have no date_received recorded.
+  # We will substitute date_received with the date_decision + the mean of the diff 
+  # between date_received and date_decision.
 
-  mutate(days_btwn_decision_received = as.double(difftime(lubridate::ymd(date_decision),
-                                                          lubridate::ymd(date_received),
+  mutate(days_btwn_decision_received = as.double(difftime(ymd(date_decision),
+                                                          ymd(date_received),
                                                           units = "days"))) %>%
   mutate(mean_days_btwn_decision_received = mean(days_btwn_decision_received, na.rm = TRUE)) %>%
   mutate(date_received = if_else(is.na(date_received), 
                                  as.Date(date_decision) - mean_days_btwn_decision_received,
                                  as.Date(date_received))) %>%
-  mutate(days_until_accommodation_met = as.double(difftime(lubridate::ymd(date_acc_met),
-                                                           lubridate::ymd(date_received),
+  mutate(days_until_accommodation_met = as.double(difftime(ymd(date_acc_met),
+                                                           ymd(date_received),
                                                            units = "days"))) %>%
   select(pei:date_received, date_decision:date_referral)
 ```
 
 ```{r merge transfers and shelter characteristics}
 
-# Each individual can have multiple internal and external transfers as well as 
-# multiple ADA requests. Since we have no certain way of knowing which transfer 
-# met which ADA request - I will track whether the most recent request was met 
-# at each transfer. We are assuming that once the individual's needs are met 
-# once, the request was met. E.g. If request was met at transfer 5, that
-# date_referral is the new date_acc_met.
-
-# NOTE: This will be an undercount because someone could have repeated additive 
-# requests.
-
-# NOTE: In the future, DHCD should include info on the temporary/permanent 
-# nature of the need in their data collection. Mental health needs are probably 
-# not temporary. We may want to do more specific analysis on mental health.
-
-# I use a left join because I want to keep all of the rows from my ada_transfers
-# tibble - even if there is no corresponding shelter characteristic information.
-# This merge will allow me to see whether the location the individual was 
-# transferred to meets that individual's disability accommodation request.
-
 # Externally, there are 156 hotel placements & 1692 non-hotel placements.
 # Internally, there are 1295 entity_to transfers.
 # 26 transfers are NA - there is no information on transfer_type provided.
 
-# I am able to account for non_hotel placement and entity_to transfers
-# using my shelter characteristics dataset. Because I do not have information
-# on the characteristics of hotels, I will run a scenario where a hotel meets 
-# all unit type accommodations and a scenario where a hotel doesn't meet any.
-
 transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
+  
+  # I use a left join because I want to keep all of the rows from my ada_transfers
+  # tibble - even if there is no corresponding shelter characteristic information.
+  # This merge will allow me to see whether the location the individual was 
+  # transferred to meets that individual's disability accommodation request.
+  
   x <- left_join(transfers, chars, by = c("transfer_location" = "name")) %>% 
   
   # I coded placement_acc_met as 
@@ -532,6 +526,11 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
                                     req_ac_unit <= air_conditioning &
                                     req_non_carpeted_placement_unit <= non_carpeted &
                                     req_wheelchair_accessible_placement_unit <= wheelchair_accessible, 1, 0))) %>%
+    
+  # I am able to account for non_hotel placement and entity_to transfers
+  # using my shelter characteristics dataset. Because I do not have information
+  # on the characteristics of hotels, I will run a scenario where a hotel meets 
+  # all unit type accommodations and a scenario where a hotel doesn't meet any.
 
   mutate(placement_acc_met = ifelse(hotel == TRUE & transfer_type_specific == "hotel_placement", 1, 
                              ifelse(hotel == TRUE & transfer_type_specific != "hotel_placement", placement_acc_met,
@@ -556,29 +555,65 @@ transfers_chars_hotel_t <- transfers_include_chars(ada_transfers, shelter_charac
 
 transfers_chars_hotel_f <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = FALSE)
 
-transfers_chars_hotel_t %>%
-  
-  # I am filtering out requests that do not contain unit type accommodations 
-  # because I have insufficient data to account for placement close to service
-  # providers, other, assistance animals, access to full cooking facilities, 
-  # change in EA regulation, and assigned caretaker. Only 1282/3143 rows remain.
-  
-  filter(placement_acc_met != 2) %>%
-  group_by(pei, date_received) %>%
-  arrange(date_received) %>%
-  group_modify( ~ {
-    .x %>%
-      arrange(date_referral) %>%
-      mutate(date_acc_met = ifelse(nrow(.x %>% filter(placement_acc_met == 1)) >= 1, 
-                                   head(.x %>% filter(placement_acc_met == 1))$date_referral,
-                                   NA))
-    }) %>% View()
+# Each individual can have multiple internal and external transfers as well as 
+# multiple ADA requests. Since we have no certain way of knowing which transfer 
+# met which ADA request - I will track whether the most recent request was met 
+# at each transfer. We are assuming that once the individual's needs are met 
+# once, the request was met. E.g. If request was met at transfer 5, that
+# date_referral is the new date_acc_met.
 
-# Filter to the correct transfer 
-# For each pei-date combo,
-# - If placement_acc_met = 1
-#    - Keep the earliest one that meets the need and get rid of the other rows.
-# - If request was never met, set a 1-year censorship date for date_acc_met. Keep the earliest row.
+# NOTE: This will be an undercount because someone could have repeated additive 
+# requests.
+
+# NOTE: In the future, DHCD should include info on the temporary/permanent 
+# nature of the need in their data collection. Mental health needs are probably 
+# not temporary. We may want to do more specific analysis on mental health.
+
+# This function takes in a tibble generated by transfer_include_chars. It
+# supplements the date_acc_met column with transfer data and filters the tibble
+# to only retain one row for each pei-date combo.
+
+supplement_date_acc_met <- function(df){
+  df %>%
+  
+    # I am filtering out requests that do not contain unit type accommodations 
+    # because I have insufficient data to account for placement close to service
+    # providers, other, assistance animals, access to full cooking facilities, 
+    # change in EA regulation, and assigned caretaker. Only 1282/3143 rows remain.
+    
+    filter(placement_acc_met != 2) %>%
+    
+    # Group the data by each unique pei-date_received combo.
+  
+    group_by(pei, date_received) %>%
+    
+    # Keep the earliest transfer that meets the need OR
+    # the earliest transfer that doesn't meet the need if the need is never met.
+    
+    arrange(desc(placement_acc_met), date_referral) %>%
+    slice(1) %>%
+    
+    # If a date_acc_met value already exists, keep it. 
+    
+    mutate(date_acc_met = ifelse(!is.na(date_acc_met), 
+                                 date_acc_met, 
+                                 
+                                 # Else, if the request was met by the transfer, 
+                                 # replace date_acc_met with date_referral.
+                                 # If the request was never met, set a 1-year
+                                 # censorship date.
+                                 
+                                 ifelse(placement_acc_met == 1, 
+                                        date_referral, 
+                                        date_received))) %>%
+    mutate(date_acc_met = strptime("1970-01-01", "%Y-%m-%d", tz="GMT") + date_acc_met) %>%
+    mutate(date_acc_met = ymd(date_acc_met)) %>%
+    mutate(days_until_accommodation_met = as.double(difftime(ymd(date_acc_met),
+                                                             ymd(date_received),
+                                                             units = "days")))
+}
+
+supplement_date_acc_met(transfers_chars_hotel_t)
 
 # TODO: Clean & merge HUD exit data. 
 
@@ -588,6 +623,38 @@ transfers_chars_hotel_t %>%
 
 # Is there demographic information for these individuals? 
 # Do they only track for head of household or each individual?
+
+```
+
+$$ wait\_time_i = \beta_0 + \beta_1 mental_i + \beta_2 scattered\_site_i + \beta_3 mental_i scattered\_site_i + \epsilon_i $$
+
+```{r model}
+
+# outcome - # of days until request is met (wait time) OR whether request was met?
+# covariates - reason for request (mental or physical) or type of request (scattered site or not)
+
+approved_requests <- approved_adas %>%
+  pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
+               names_to = "accommodation_type", 
+               values_to = "requests") %>%
+  group_by(accommodation_type) %>%
+  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  arrange(desc(total_requests)) %>%
+  mutate(pct_requests = total_requests/sum(total_requests))
+
+approved_reasons <- approved_adas %>%
+  pivot_longer(cols = reason_physical_health:reason_other, 
+               names_to = "reason_type", 
+               values_to = "requests") %>%
+  group_by(reason_type) %>%
+  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  arrange(desc(total_requests)) %>%
+  mutate(pct_requests = total_requests/sum(total_requests))
+
+fit_obj <- stan_glm(days_until_accommodation_met ~ request_reason + accommodation_type
+                    data = week_8,
+                    refresh = 0,
+                    family = gaussian)
 
 ```
 
@@ -605,7 +672,7 @@ service_provider_requests <- approved_adas %>%
          misc_notes = NA)
 
 write_csv(service_provider_requests, 
-                path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/service_provider_requests.csv")
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/service_provider_requests.csv")
 
 # Generate a spreadsheet of approved ADAs who have "NA" for date_received.
 
@@ -613,7 +680,7 @@ approved_adas_na_date <- approved_adas %>%
   filter(is.na(date_received))
 
 write_csv(approved_adas_na_date, 
-                path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/approved_adas_na_date.csv")
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/approved_adas_na_date.csv")
 
 # Generate a spreadsheet of people who underwent a ton of transfers (10+). 
 # that may require follow-up for Laura.
@@ -625,6 +692,33 @@ ada_many_transfers <- ada_transfers %>%
   filter(num_transfers > 5)
 
 write_csv(ada_many_transfers, 
-                path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/approved_adas_many_tranfers.csv")
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/approved_adas_many_tranfers.csv")
+
+# Generate a spreadsheet of people who have a ADA date_acc_met column filled out
+# and require a transfer (service providers, scattered site, first floor, 
+# wheelchair, bedrooms).
+
+ada_date_acc_met_filled <- approved_adas %>%
+  filter(!is.na(date_acc_met)) %>%
+  filter(req_placement_unit_close_to_service_providers == 1 |
+         req_scattered_site_placement_unit_co_housing_unit == 1 |
+         req_first_floor_or_elevator_access == 1 |
+         req_wheelchair_accessible_placement_unit == 1 |
+         req_additional_bedrooms == 1) %>%
+  arrange(desc(date_received)) 
+
+ada_date_acc_met_filled_sample <- ada_date_acc_met_filled %>%
+  sample_n(50)
+
+write_csv(ada_date_acc_met_filled, 
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled.csv")
+
+write_csv(ada_date_acc_met_filled_sample, 
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_sample.csv")
+
+# DHCD's date_acc_met determination may not be correct. 
+# Check 10% random cases by hand to stress test. 
+# Did a transfer happen before their date_acc_met? PDF analysis?
+
 ```
 
