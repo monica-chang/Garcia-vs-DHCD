@@ -10,6 +10,7 @@
 library(shiny)
 library(shinythemes)
 library(tidyverse)
+library(rstanarm)
 
 # Define UI for application that draws a histogram
 shinyUI(
@@ -54,11 +55,33 @@ shinyUI(
                                                "Other" = "req_other"),
                                    selected = "Placement Unit Close to Service Providers",
                                    multiple = TRUE)
-                     ),
-                     
+                                ),
                      mainPanel(
                        plotOutput("request_time_plot")
-                  )
+                     )
                    
-               )
+                )),
+                
+             tabPanel(
+                  "Model",
+                  sidebarLayout(
+                    sidebarPanel(
+                      selectInput("accommodation_select",
+                                  "Choose a specific accommodation type:",
+                                  choices = c("Scattered Site Placement Unit / Co-housing Unit" = "req_scattered_site_placement_unit_co_housing_unit",
+                                              "First Floor or Elevator Access" = "req_first_floor_or_elevator_access",
+                                              "Wheelchair Accessible Placement Unit" = "req_wheelchair_accessible_placement_unit"),
+                                  selected = "Scattered Site Placement Unit / Co-housing Unit"),
+                      selectInput("reason_select",
+                                  "Choose a specific reason type:",
+                                  choices = c("Mental Health" = "reason_mental_health",
+                                              "Emotional Health" = "reason_emotional_health",
+                                              "Physical Health" = "reason_physical_health",
+                                              "Developmental Disability/Behavioral Health" = "reason_developmental_disability_behavioral"),
+                                  selected = "Mental Health")
+                    ),
+                    mainPanel(
+                      plotOutput("stan_model")
+                    ))
+             
     )))

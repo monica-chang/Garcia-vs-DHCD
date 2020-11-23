@@ -1,4 +1,5 @@
 approved_adas <- readRDS(file = "data/approved_adas.rds") 
+supplemented_interesting_ada_transfers <- readRDS(file = "data/supplemented_interesting_ada_transfers.rds") 
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
@@ -61,6 +62,16 @@ shinyServer(function(input, output) {
                  x = "Days until accommodation was met",
                  y = "Proportion of requests met")
         })
+    
+    output$stan_model <- renderPrint({ 
+        
+        fit_obj <- stan_glm(days_until_accommodation_met ~ input$accommodation_select + input$reason_select,
+                            data = supplemented_interesting_ada_transfers,
+                            refresh = 0)
+        
+        print(fit_obj, digits = 4, detail = FALSE)
+        
+    })
 
 })
     

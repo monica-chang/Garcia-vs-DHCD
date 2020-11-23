@@ -342,40 +342,6 @@ approved_reasons %>%
 
 ```
 
-
-```{r approved ADA request time plot}
-
-# Create a plot showing the proportion of approved ADA requests met over time.
-
-# Note: 52 requests have a negative # of days_until_accommodation_met which 
-# doesn't make sense. This analysis excludes these requests. This plot is  
-# based on the 572 approved requests that have a positive # of 
-# days_until_accommodation_met. 
-
-# Note: 1484/2108 (70%) of the date_acc_met values are missing! 
-# We will need transfer/bed registry data to supplement these missing values.
-         
-create_kaplan_meier <- function(df){
-  df %>%
-    filter(days_until_accommodation_met >= 0) %>% 
-    group_by(days_until_accommodation_met) %>%
-    summarize(num_requests_met = n(), .groups = "drop") %>%
-    mutate(prop_requests_met = num_requests_met/nrow(df)) %>%
-    mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
-    ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
-      geom_line() + 
-      xlim(0, 400) +
-      ylim(0, 1) +
-      labs(title = "Proportion of requests that were met (2015-2019)", 
-           x = "Days until accommodation was met",
-           y = "Proportion of requests met")
-}
-
-create_kaplan_meier(approved_adas)
-create_kaplan_meier(clean_ada_transfers)
-```
-
-
 ```{r clean bed registry data}
 
 # I clean the data on shelter characteristics to select relevant columns. 
@@ -418,7 +384,6 @@ shelter_characteristics <- read_excel("raw_data/DHCD6_126075.xlsx") %>%
 ```
 
 
-
 ```{r clean transfer data}
 
 # I clean and merge the data on internal transfers (transfers within a program 
@@ -427,7 +392,9 @@ shelter_characteristics <- read_excel("raw_data/DHCD6_126075.xlsx") %>%
 # Home to JRI) by renaming appropriate columns, pivoting the data longer, 
 # and row binding.
 
-external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.xlsx") %>%
+external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.xlsx",
+           col_types = c("text", "text", "text", "text", "text", "text", "text", 
+                         "text", "date", "text", "date", "text", "text")) %>%
   clean_names() %>%
   rename(pei = participant_enterprise_identifier,
          hotel_placement = site_to_program_name,
@@ -444,7 +411,10 @@ external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.
   arrange(date_referral) %>%
   mutate(date_referral = ymd_hms(date_referral)) 
    
-internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transfers.xlsx") %>%
+internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transfers.xlsx",
+                                 col_types = c("text", "text", "text", "text", 
+                                               "text", "text", "text", "text", 
+                                               "date", "text", "text", "text")) %>%
   clean_names() %>%
   rename(pei = participant_enterprise_identifier,
          date_referral = referral_date) %>%
@@ -557,6 +527,7 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
   
   filter(transfer_type_specific != "program_to") %>%
   select(pei:req_assigned_caretaker_temporary_non_ea_household_member, 
+         reason_physical_health:reason_other,
          transfer_type:non_carpeted, placement_acc_met)
 }
 
@@ -565,13 +536,17 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
 
 transfers_chars_hotel_t <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = TRUE)
 
+saveRDS(transfers_chars_hotel_t, file = "shiny/data/transfers_chars_hotel_t.rds")
+
 # Tibble generated when we make the assumption that a hotel transfer meets no
 # unit type accommodations.
 
 transfers_chars_hotel_f <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = FALSE)
+
+saveRDS(transfers_chars_hotel_f, file = "shiny/data/transfers_chars_hotel_f.rds")
 ```
 
-```{r clean ada trannsfers}
+```{r clean ada transfers}
 
 # Each individual can have multiple internal and external transfers as well as 
 # multiple ADA requests. Since we have no certain way of knowing which transfer 
@@ -632,50 +607,131 @@ supplement_date_acc_met <- function(df){
                                                              units = "days")))
 }
 
-# 671 rows.
+# For requests that ask for either scattered site, first floor, or wheelchair, 
+# I substitute missing date_acc_met values with transfer information (617 rows).
 
-clean_ada_transfers <- supplement_date_acc_met(transfers_chars_hotel_t)
+supplemented_interesting_ada_transfers <- supplement_date_acc_met(transfers_chars_hotel_t) %>%
+  filter(days_until_accommodation_met >= 0 | is.na(days_until_accommodation_met))
 
-# TODO: Clean & merge HUD exit data. 
+saveRDS(supplemented_interesting_ada_transfers, 
+        file = "shiny/data/supplemented_interesting_ada_transfers.rds")
 
-# After we have a Kaplan-Meier plot that is more reliable, we may be able to have 
-# a binary question (was this request met within 30 days or not) and identify
-# a reasonable cut off date. Percentages are easier to understand.
+# FUTURE TODO: After we have a Kaplan-Meier plot that is more reliable, 
+# we may be able to have a binary question (was this request met within 30 days)
+# and identify a reasonable cut off date. Percentages are easier to understand.
 
-# Is there demographic information for these individuals? 
+# FUTURE TODO: Clean & merge HUD exit data. 
+
+# FUTURE TODO: Is there demographic information for these individuals? 
 # Do they only track for head of household or each individual?
 
 ```
 
-$$ wait\_time_i = \beta_0 + \beta_1 mental_i + \beta_2 scattered\_site_i + \beta_3 mental_i scattered\_site_i + \epsilon_i $$
+```{r approved ADA request time plot}
 
+# This function creates a Kaplan-Meier plot showing the proportion of 
+# approved ADA requests met over time.
+         
+create_kaplan_meier <- function(df){
+  df %>%
+    filter(days_until_accommodation_met >= 0) %>% 
+    group_by(days_until_accommodation_met) %>%
+    summarize(num_requests_met = n(), .groups = "drop") %>%
+    mutate(prop_requests_met = num_requests_met/nrow(df)) %>%
+    mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
+    ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
+      geom_line() + 
+      xlim(0, 400) +
+      ylim(0, 1) +
+      labs(title = "Proportion of requests that were met (2015-2019)", 
+           x = "Days until accommodation was met",
+           y = "Proportion of requests met")
+}
+
+# This creates a Kaplan-Meier plot that takes into account ALL approved ADA 
+# requests and only using the date_acc_met values provided by DHCD (2108
+# requests).
+
+# Note: 1484/2108 (70%) of the date_acc_met values are missing! 
+# We will need transfer/bed registry data to supplement these missing values.
+
+# Note: 52 requests have a negative # of days_until_accommodation_met which 
+# doesn't make sense. This analysis excludes these requests. This plot is  
+# based on the 572 approved requests that have a positive # of 
+# days_until_accommodation_met. 
+
+create_kaplan_meier(approved_adas)
+
+interesting_approved_adas <- approved_adas %>% 
+  filter(interesting == 1) %>%
+  filter(days_until_accommodation_met >= 0 | is.na(days_until_accommodation_met))
+
+# This creates a Kaplan-Meier plot that takes into account requests that 
+# ask for either scattered site, first floor, or wheelchair accessibility.
+# This only uses the date_acc_met values provided by DHCD (1634 requests).
+
+create_kaplan_meier(interesting_approved_adas)
+
+# This creates a Kaplan-Meier plot that ONLY takes into account requests that 
+# ask for either scattered site, first floor, or wheelchair and substitutes 
+# missing date_acc_met values with transfer information (617 requests). 
+# The biggest unknown is whether service provider requests were met. 
+
+create_kaplan_meier(supplemented_interesting_ada_transfers)
+```
+
+$$ wait\_time_i = \beta_0 + \beta_1 mental_i + \beta_2 scattered\_site_i + \beta_3 mental_i scattered\_site_i + \epsilon_i $$
 ```{r model}
 
-# outcome - # of days until request is met (wait time) OR whether request was met?
-# covariates - reason for request (mental or physical) or type of request (scattered site or not)
+# Data tab
+# Display general summary graphs of approved ADA request breakdown
+# Checkboxes for:
+  # All accs vs. just interesting accs 
+  # Substitute missing values w transfers
+  # Hotel assumption 
+# Display time plot
 
-approved_requests <- approved_adas %>%
-  pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
-               names_to = "accommodation_type", 
-               values_to = "requests") %>%
-  group_by(accommodation_type) %>%
-  summarize(total_requests = sum(requests), .groups = "drop") %>%
-  arrange(desc(total_requests)) %>%
-  mutate(pct_requests = total_requests/sum(total_requests))
+# Model tab
 
-approved_reasons <- approved_adas %>%
-  pivot_longer(cols = reason_physical_health:reason_other, 
-               names_to = "reason_type", 
-               values_to = "requests") %>%
-  group_by(reason_type) %>%
-  summarize(total_requests = sum(requests), .groups = "drop") %>%
-  arrange(desc(total_requests)) %>%
-  mutate(pct_requests = total_requests/sum(total_requests))
+# Outcome - Wait time (# of days until request is met)
+# Covariates - Reason for request (mental, emotional, physical, developmental) 
+#              Type of request (scattered site, first floor, wheelchair)
 
-fit_obj <- stan_glm(days_until_accommodation_met ~ request_reason + accommodation_type
-                    data = week_8,
-                    refresh = 0,
-                    family = gaussian)
+fit_obj <- stan_glm(days_until_accommodation_met ~ req_scattered,
+                    data = supplemented_interesting_ada_transfers,
+                    refresh = 0)
+
+print(fit_obj, digits = 4)
+
+# reason_developmental_disability_behavioral - -46.5298  17.0417
+
+fit_obj_tbl <- as_tibble(fit_obj) %>%
+  rename(mu = `(Intercept)`) %>%
+  mutate(reason_mental_health = reason_mental_health + mu) %>%
+  mutate(req_scattered_site_placement_unit_co_housing_unit = req_scattered_site_placement_unit_co_housing_unit + mu) %>%
+  select(-sigma) 
+
+fit_obj_stat <- tibble(mu = median(fit_obj_tbl$mu),
+                       reason_mental_health = median(fit_obj_tbl$reason_mental_health),
+                       req_scattered_site_placement_unit_co_housing_unit = 
+                       median(fit_obj_tbl$req_scattered_site_placement_unit_co_housing_unit))
+
+saveRDS(fit_obj_stat, file = "shiny/data/fit_obj_stat.rds")
+
+fit_obj_tbl %>% 
+  pivot_longer(cols = mu:req_scattered_site_placement_unit_co_housing_unit,
+               names_to = "parameter",
+               values_to = "wait_time") %>%
+  ggplot(aes(x = wait_time, color = parameter)) +
+    geom_histogram(aes(y = after_stat(count/sum(count))),
+                   alpha = 0.5, 
+                   bins = 100, 
+                   position = "identity")
+    
+supplemented_interesting_ada_transfers %>%
+  ggplot(aes(x = reason_mental_health, y = days_until_accommodation_met, group = reason_mental_health)) + 
+    geom_boxplot() +
+    ylim(0, 200)
 
 ```
 
