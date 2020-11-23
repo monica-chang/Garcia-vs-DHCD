@@ -432,7 +432,7 @@ external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.
   rename(pei = participant_enterprise_identifier,
          hotel_placement = site_to_program_name,
          non_hotel_placement = entity_to,
-         date_referral = date_referral_was_accepted_or_rejected) %>%
+         date_referral = referral_date) %>%
   mutate(pei = gsub("-", "", pei)) %>%
   mutate(date_referral = ymd_hms(date_referral)) %>%
   pivot_longer(cols = hotel_placement:non_hotel_placement, 
@@ -546,6 +546,12 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
                              ifelse(hotel == FALSE & transfer_type_specific == "hotel_placement", 0, 
                              ifelse(hotel == FALSE & transfer_type_specific != "hotel_placement", placement_acc_met, placement_acc_met))))) %>%    
                                    
+  # In instances when a provider transfers a family from one of its programs to 
+  # another, there is a two-step process. First, the provider refers the family 
+  # to the new program. This will appear as a program_to transfer. Once the 
+  # provider accepts the referral, the provider places the family in the new 
+  # shelter unit.  This appears as an entity_to transfer.
+  
   # Every program_to transfer is followed by a more specific entity_to transfer, 
   # so I can filter these transfers out.
   
@@ -629,9 +635,6 @@ supplement_date_acc_met <- function(df){
 # 671 rows.
 
 clean_ada_transfers <- supplement_date_acc_met(transfers_chars_hotel_t)
-  
-
-# C27626
 
 # TODO: Clean & merge HUD exit data. 
 
