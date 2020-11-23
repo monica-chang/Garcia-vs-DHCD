@@ -611,7 +611,7 @@ supplement_date_acc_met <- function(df){
 # I substitute missing date_acc_met values with transfer information (617 rows).
 
 supplemented_interesting_ada_transfers <- supplement_date_acc_met(transfers_chars_hotel_t) %>%
-  filter(days_until_accommodation_met >= 0 | is.na(days_until_accommodation_met))
+  filter(days_until_accommodation_met >= 0)
 
 saveRDS(supplemented_interesting_ada_transfers, 
         file = "shiny/data/supplemented_interesting_ada_transfers.rds")
@@ -684,6 +684,7 @@ $$ wait\_time_i = \beta_0 + \beta_1 mental_i + \beta_2 scattered\_site_i + \beta
 ```{r model}
 
 # Data tab
+
 # Display general summary graphs of approved ADA request breakdown
 # Checkboxes for:
   # All accs vs. just interesting accs 
@@ -697,29 +698,30 @@ $$ wait\_time_i = \beta_0 + \beta_1 mental_i + \beta_2 scattered\_site_i + \beta
 # Covariates - Reason for request (mental, emotional, physical, developmental) 
 #              Type of request (scattered site, first floor, wheelchair)
 
-fit_obj <- stan_glm(days_until_accommodation_met ~ req_scattered,
+fit_obj <- stan_glm(days_until_accommodation_met ~ req_scattered_site_placement_unit_co_housing_unit,
                     data = supplemented_interesting_ada_transfers,
                     refresh = 0)
 
 print(fit_obj, digits = 4)
 
-# reason_developmental_disability_behavioral - -46.5298  17.0417
+# req_scattered_site_placement_unit_co_housing_unit -56.2539  13.6447
+# reason_developmental_disability_behavioral -46.5298  17.0417
+# req_first_floor_or_elevator_access 67.5979 14.4899
 
 fit_obj_tbl <- as_tibble(fit_obj) %>%
   rename(mu = `(Intercept)`) %>%
-  mutate(reason_mental_health = reason_mental_health + mu) %>%
-  mutate(req_scattered_site_placement_unit_co_housing_unit = req_scattered_site_placement_unit_co_housing_unit + mu) %>%
-  select(-sigma) 
+  mutate(reason_or_request = req_scattered_site_placement_unit_co_housing_unit + mu) %>%
+  select(-req_scattered_site_placement_unit_co_housing_unit, -sigma) 
+
+# I create a tibble to more easily extract the median values from stan_glm.
 
 fit_obj_stat <- tibble(mu = median(fit_obj_tbl$mu),
-                       reason_mental_health = median(fit_obj_tbl$reason_mental_health),
-                       req_scattered_site_placement_unit_co_housing_unit = 
-                       median(fit_obj_tbl$req_scattered_site_placement_unit_co_housing_unit))
+                       reason_or_request = median(fit_obj_tbl$reason_or_request))
 
 saveRDS(fit_obj_stat, file = "shiny/data/fit_obj_stat.rds")
 
 fit_obj_tbl %>% 
-  pivot_longer(cols = mu:req_scattered_site_placement_unit_co_housing_unit,
+  pivot_longer(cols = mu:reason_or_request,
                names_to = "parameter",
                values_to = "wait_time") %>%
   ggplot(aes(x = wait_time, color = parameter)) +
@@ -727,11 +729,6 @@ fit_obj_tbl %>%
                    alpha = 0.5, 
                    bins = 100, 
                    position = "identity")
-    
-supplemented_interesting_ada_transfers %>%
-  ggplot(aes(x = reason_mental_health, y = days_until_accommodation_met, group = reason_mental_health)) + 
-    geom_boxplot() +
-    ylim(0, 200)
 
 ```
 
