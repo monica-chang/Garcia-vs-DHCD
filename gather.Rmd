@@ -680,7 +680,7 @@ create_kaplan_meier(interesting_approved_adas)
 create_kaplan_meier(supplemented_interesting_ada_transfers)
 ```
 
-$$ wait\_time_i = \beta_0 + \beta_1 mental_i + \beta_2 scattered\_site_i + \beta_3 mental_i scattered\_site_i + \epsilon_i $$
+$$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilon_i $$
 ```{r model}
 
 # Data tab
