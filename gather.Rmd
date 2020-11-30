@@ -279,13 +279,29 @@ saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
 ```{r approved ADA request tables and plots}
 
 approved_requests <- approved_adas %>%
-  pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
-               names_to = "accommodation_type", 
-               values_to = "requests") %>%
-  group_by(accommodation_type) %>%
-  summarize(total_requests = sum(requests), .groups = "drop") %>%
-  arrange(desc(total_requests)) %>%
-  mutate(pct_requests = total_requests/sum(total_requests))
+                pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
+                             names_to = "accommodation_type", 
+                             values_to = "requests") %>%
+                mutate(accommodation_type = recode(accommodation_type, 
+                                                   req_placement_unit_close_to_service_providers = "Placement Unit Close to Service Providers",
+                                                   req_scattered_site_placement_unit_co_housing_unit = "Scattered Site Placement Unit / Co-housing Unit",
+                                                   req_assistance_animal_within_placement_unit = "Assistance Animal within Placement Unit",
+                                                   req_first_floor_or_elevator_access = "First Floor or Elevator Access",
+                                                   req_non_carpeted_placement_unit = "Non Carpeted Placement Unit",
+                                                   req_change_in_ea_regulation_re_housing_plan = "Change in EA Regulation / Re-Housing Plan",
+                                                   req_physical_modification_to_placement_unit = "Physical Modification to Placement Unit",
+                                                   req_access_to_full_cooking_facilities = "Access to Full Cooking Facilities",
+                                                   req_wheelchair_accessible_placement_unit = "Wheelchair Accessible Placement Unit",
+                                                   req_assigned_caretaker_temporary_non_ea_household_member = "Assigned Caretaker / Temporary Non-EA Household Member",
+                                                   req_additional_bedrooms = "Additional bedrooms",
+                                                   req_ac_unit = "AC Unit",
+                                                   req_other = "Other")) %>%
+                group_by(accommodation_type) %>%
+                summarize(total_requests = sum(requests), .groups = "drop") %>%
+                arrange(desc(total_requests)) %>%
+                mutate(percent = total_requests/sum(total_requests))
+
+saveRDS(approved_requests, file = "shiny/data/approved_requests.rds")
 
 # Create a table showing the requests by accommodation type.
 
@@ -299,13 +315,13 @@ approved_requests %>%
     columns = vars(accommodation_type, total_requests)
   ) %>%
   fmt_percent(
-    columns = vars(pct_requests)
+    columns = vars(percent)
   )
 
 # Create a plot showing the requests by accommodation type.
 
 approved_requests %>%
-  ggplot(aes(x = pct_requests, y = fct_reorder(accommodation_type, pct_requests))) +
+  ggplot(aes(x = percent, y = fct_reorder(accommodation_type, percent))) +
     geom_col() +
     theme_bw() +
     scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Change in regulation/re-housing plan", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Non-carpeted", "Assistance animal", "First floor/elevator",  "Other", "Scattered site/Co-housing", "Service providers")) +
@@ -319,10 +335,17 @@ approved_reasons <- approved_adas %>%
   pivot_longer(cols = reason_physical_health:reason_other, 
                names_to = "reason_type", 
                values_to = "requests") %>%
+  mutate(reason_type = recode(reason_type, reason_mental_health = "Mental Health", 
+                                           reason_emotional_health = "Emotional Health",
+                                           reason_physical_health = "Physical Health",
+                                           reason_developmental_disability_behavioral = "Developmental Disability/Behavioral Health",
+                                           reason_other = "Other")) %>%
   group_by(reason_type) %>%
   summarize(total_requests = sum(requests), .groups = "drop") %>%
   arrange(desc(total_requests)) %>%
-  mutate(pct_requests = total_requests/sum(total_requests))
+  mutate(percent = total_requests/sum(total_requests))
+
+saveRDS(approved_reasons, file = "shiny/data/approved_reasons.rds")
 
 # Create a table showing the requests by reason type.
 
@@ -336,13 +359,13 @@ approved_reasons %>%
     columns = vars(reason_type, total_requests)
   ) %>%
   fmt_percent(
-    columns = vars(pct_requests)
+    columns = vars(percent)
   )
 
 # Create a plot showing the requests by reason type.
 
 approved_reasons %>%
-  ggplot(aes(x = pct_requests, y = fct_reorder(reason_type, pct_requests))) +
+  ggplot(aes(x = percent, y = fct_reorder(reason_type, percent))) +
     geom_col() +
     theme_linedraw() +
     scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
@@ -447,7 +470,6 @@ internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transf
 transfers <- bind_rows(external_transfers, internal_transfers) %>%
   arrange(date_referral)
 
-saveRDS(transfers, file = "shiny/data/transfers.rds")
 ```
 
 ```{r merge adas and transfer}
@@ -690,10 +712,10 @@ create_kaplan_meier <- function(df){
 # Note: 52 requests have a negative # of days_until_accommodation_met which 
 # doesn't make sense. This analysis excludes these requests. 
 
-approved_adas_include_NA <- approved_adas %>%
+approved_adas_no_neg <- approved_adas %>%
   filter(days_until_accommodation_met >= 0 | is.na(days_until_accommodation_met))
 
-create_kaplan_meier(approved_adas_include_NA)
+create_kaplan_meier(approved_adas_no_neg)
 
 # This creates a Kaplan-Meier plot that takes into account requests that 
 # ask for either scattered site, first floor, or wheelchair accessibility.

@@ -1,47 +1,45 @@
 approved_adas <- readRDS(file = "data/approved_adas.rds") 
-supplemented_interesting_ada_transfers <- readRDS(file = "data/supplemented_interesting_ada_transfers.rds") 
+approved_requests <- readRDS(file = "data/approved_requests.rds") 
+approved_reasons <- readRDS(file = "data/approved_reasons.rds")
+interesting_approved_adas <- readRDS(file = "data/approved_adas.rds") 
+supplemented_interesting_ada_transfers_t <- readRDS(file = "data/supplemented_interesting_ada_transfers_t.rds") 
+supplemented_interesting_ada_transfers_f <- readRDS(file = "data/supplemented_interesting_ada_transfers_f.rds") 
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
 
+    output$request_types_tbl <- renderTable({approved_requests})
+        
     output$request_types_plot <- renderPlot({
-
-        approved_requests <- approved_adas %>%
-            pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
-                         names_to = "accommodation_type", 
-                         values_to = "requests") %>%
-            group_by(accommodation_type) %>%
-            summarize(total_requests = sum(requests), .groups = "drop") %>%
-            arrange(desc(total_requests)) %>%
-            mutate(pct_requests = total_requests/sum(total_requests))
         
         # Create a plot showing the requests by accommodation type.
         
         approved_requests %>%
-            ggplot(aes(x = pct_requests, y = fct_reorder(accommodation_type, pct_requests))) +
+            ggplot(aes(x = percent, y = fct_reorder(accommodation_type, percent))) +
             geom_col() +
             theme_bw() +
             scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Change in regulation/re-housing plan", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Non-carpeted", "Assistance animal", "First floor/elevator",  "Other", "Scattered site/Co-housing", "Service providers")) +
-            labs(title = "Percentage of approved ADA requests \nby accommodation type (2015-2019)",
+            labs(title = "Proportion of approved ADA requests \nby accommodation type (2015-2019)",
                  subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
-                 x = "Percentage of approved requests", 
+                 x = "Proportion of approved requests", 
                  y = "Accommodation type",
                  caption = "Source: Department of Housing & Community Development")
-        
-        
     })
+    
+    output$reason_types_tbl <- renderTable({approved_reasons})
     
     output$reason_types_plot <- renderPlot({
         
         # Create a plot showing the requests by reason type.
         
         approved_reasons %>%
-            ggplot(aes(x = pct_requests, y = fct_reorder(reason_type, pct_requests))) +
+            ggplot(aes(x = percent, y = fct_reorder(reason_type, percent))) +
             geom_col() +
             theme_linedraw() +
             scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
-            labs(title = "Percentage of approved ADA requests \nby reason type (2015-2019)",
-                 x = "Percentage of approved requests", 
+            labs(title = "Proportion of approved ADA requests \nby reason type (2015-2019)",
+                 subtitle = "Physical health and mental health were the most common reasons for an ADA request.",
+                 x = "Proportion of approved requests", 
                  y = "Reason type",
                  caption = "Source: Department of Housing & Community Development")
     })
@@ -69,6 +67,9 @@ shinyServer(function(input, output) {
                      caption = "Source: Department of Housing & Community Development")
         }
         
+        approved_adas_no_neg <- approved_adas %>%
+            filter(days_until_accommodation_met >= 0 | is.na(days_until_accommodation_met))
+        
         if(input$interesting_select == TRUE & 
            input$substitute_select == TRUE & 
            input$hotel_select == TRUE) {
@@ -84,7 +85,7 @@ shinyServer(function(input, output) {
                    input$hotel_select == FALSE) {
                     create_kaplan_meier(interesting_approved_adas)
                 } else {
-                    create_kaplan_meier(approved_adas_include_NA)
+                    create_kaplan_meier(approved_adas_no_neg)
                 }
             }
         }

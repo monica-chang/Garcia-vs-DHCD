@@ -11,17 +11,75 @@ library(shiny)
 library(shinythemes)
 library(tidyverse)
 library(rstanarm)
+library(plotly)
 
 # Define UI for application that draws a histogram
 shinyUI(
     navbarPage(theme = shinytheme("flatly"), 
         "Garcia vs DHCD",
+               tabPanel(
+                 "The Problem",
+                 p("For my final project, I am working with the Greater Boston
+                   Legal Services Housing Unit to provide data analytics support
+                   on their class action lawsuit")),
                
                tabPanel(
-                   "Data",
-                   fluidRow(
-                     splitLayout(cellWidths = c("50%", "50%"), plotOutput("request_types_plot"), plotOutput("reason_types_plot"))
-                   ),
+                   "ADA Request Overview",
+                   
+                   # Using subtabs at the top
+                   
+                   tabsetPanel(
+                     
+                     # Tab one: Approved requests
+                     
+                     tabPanel(
+                       "Approved requests",
+                       h2("Approved requests"),
+                       p("Here's an overview of the types of accommodations that were most frequently approved from 08/04/15 - 12/25/19.")
+                       ),
+                     
+                     # Tab two: Accommodation types
+                     
+                     tabPanel(
+                       "Accommodation types",
+                       h2("Accommodation types"),
+                       p("Here's an overview of the types of accommodations that were most frequently requested in approved ADA requests from 08/04/15 - 12/25/19."),
+                       fluidRow(style = 'padding:30px;',
+                                column(7,
+                                       
+                                       # Plot bar graph of accommodation type breakdown.
+                                       
+                                       plotOutput("request_types_plot")),
+                                column(
+                                  5,
+                                  tableOutput("request_types_tbl"))
+                       )  
+                     ),
+                     
+                     # Tab three: Reason types
+                     
+                     tabPanel(
+                       "Reason types",
+                       h2("Reason types"),
+                       p("Here's an overview of the reasons that were most frequently cited for approved ADA requests from 08/04/15 - 12/25/19."),
+                       fluidRow(style = 'padding:30px;',
+                                column(7,
+                                       
+                                       # Plot bar graph of accommodation type breakdown.
+                                       
+                                       plotOutput("reason_types_plot")),
+                                column(
+                                  5,
+                                  tableOutput("reason_types_tbl"))
+                       ) 
+                     )
+                   )
+               ),
+        
+              tabPanel(
+                "Delays in DHCD Accommodation",
+                titlePanel("Delays in DHCD Accommodation"),
+                p("Here's an interactive time plot that shows the proportion of approved ADA requests the DHCD meets over time."),
                    sidebarLayout(
                      sidebarPanel(
                        
