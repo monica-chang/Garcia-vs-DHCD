@@ -48,19 +48,47 @@ shinyServer(function(input, output) {
     
     output$request_time_plot <- renderPlot({ 
         
-        approved_adas %>%
-            filter(days_until_accommodation_met >= 0) %>% 
-            group_by(days_until_accommodation_met) %>%
-            summarize(num_requests_met = n(), .groups = "drop") %>%
-            mutate(prop_requests_met = num_requests_met/nrow(approved_adas)) %>%
-            mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
-            ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
-            geom_line() + 
-            xlim(0, 100) +
-            ylim(0, 1) +
-            labs(title = "Proportion of approved ADA requests that were met (2015-2019)", 
-                 x = "Days until accommodation was met",
-                 y = "Proportion of requests met")
+        create_kaplan_meier <- function(df){
+            df_within_date <- df %>%
+                filter(date_received >= input$date_range[1] & date_received <= input$date_range[2])
+            
+            df_within_date %>%
+                filter(days_until_accommodation_met >= 0) %>% 
+                group_by(days_until_accommodation_met) %>%
+                summarize(num_requests_met = n(), .groups = "drop") %>%
+                mutate(prop_requests_met = num_requests_met/nrow(df_within_date)) %>%
+                mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
+                ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
+                geom_line() + 
+                geom_vline(xintercept = 30, color = "red", lty = "dashed") +
+                xlim(0, 400) +
+                ylim(0, 1) +
+                labs(title = "Proportion of approved ADA requests that were met", 
+                     x = "Days until accommodation was met",
+                     y = "Proportion of requests met",
+                     caption = "Source: Department of Housing & Community Development")
+        }
+        
+        if(input$interesting_select == TRUE & 
+           input$substitute_select == TRUE & 
+           input$hotel_select == TRUE) {
+            create_kaplan_meier(supplemented_interesting_ada_transfers_t)
+        } else {
+            if(input$interesting_select == TRUE & 
+               input$substitute_select == TRUE & 
+               input$hotel_select == FALSE) {
+                create_kaplan_meier(supplemented_interesting_ada_transfers_f)
+            } else {
+                if(input$interesting_select == TRUE &
+                   input$substitute_select == FALSE & 
+                   input$hotel_select == FALSE) {
+                    create_kaplan_meier(interesting_approved_adas)
+                } else {
+                    create_kaplan_meier(approved_adas_include_NA)
+                }
+            }
+        }
+        
         })
     
     output$stan_model <- renderPrint({ 

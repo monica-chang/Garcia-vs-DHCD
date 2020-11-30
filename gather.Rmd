@@ -347,6 +347,7 @@ approved_reasons %>%
     theme_linedraw() +
     scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
     labs(title = "Proportion of approved ADA requests \nby reason type (2015-2019)",
+         subtitle = "Physical health and mental health were the most common reasons for an ADA request.",
          x = "Proportion of approved requests", 
          y = "Reason type",
          caption = "Source: Department of Housing & Community Development")
@@ -536,10 +537,10 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
     # another, there is a two-step process. First, the provider refers the family 
     # to the new program. This will appear as a program_to transfer. Once the 
     # provider accepts the referral, the provider places the family in the new 
-    # shelter unit.  This appears as an entity_to transfer.
+    # shelter unit. This appears as an entity_to transfer.
     
-    # Every program_to transfer is followed by a more specific entity_to transfer, 
-    # so I can filter program_to transfers out.
+    # Since program_to transfer is followed by a more specific entity_to transfer, 
+    # I can filter program_to transfers out.
     
     filter(transfer_type_specific != "program_to") %>%
     select(pei:date_taken, date_referral, date_acc_met, 
@@ -609,22 +610,43 @@ supplement_date_acc_met <- function(df){
                                  ifelse(unit_type_acc_met == 1, 
                                         date_referral, 
                                         date_received + days(365)))) %>%
+    
+    # I use strptime to convert my POSIXct object to an understandable datetime.
+    
     mutate(date_acc_met = strptime("1970-01-01", "%Y-%m-%d") + date_acc_met) %>%
-    mutate(date_received = format(date_received,format='%Y-%m-%d')) %>%
-    mutate(date_acc_met = format(date_acc_met,format='%Y-%m-%d')) %>%
+    
+    # I use format to make sure my dates follow the same conventions.
+    
+    mutate(date_received = format(date_received, format = '%Y-%m-%d')) %>%
+    mutate(date_acc_met = format(date_acc_met, format = '%Y-%m-%d')) %>%
+    
+    # I create a variable calculating the days it takes for each unique ADA
+    # request to be met - based on the date_received and data_acc_met columns.
+    
     mutate(days_until_accommodation_met = as.double(difftime(date_acc_met,
                                                              date_received,
                                                              units = "days")))
 }
 
 # For requests that ask for either scattered site, first floor, or wheelchair, 
-# I substitute missing date_acc_met values with transfer information (346 rows).
+# I substitute missing date_acc_met values with transfer information and
+# assume that hotel transfers meet all unit type accommodations. 606 rows.
 
-supplemented_interesting_ada_transfers <- supplement_date_acc_met(transfers_chars_hotel_t) %>%
+supplemented_interesting_ada_transfers_t <- supplement_date_acc_met(transfers_chars_hotel_t) %>%
   filter(days_until_accommodation_met >= 0)
 
-saveRDS(supplemented_interesting_ada_transfers, 
-        file = "shiny/data/supplemented_interesting_ada_transfers.rds")
+saveRDS(supplemented_interesting_ada_transfers_t, 
+        file = "shiny/data/supplemented_interesting_ada_transfers_t.rds")
+
+# For requests that ask for either scattered site, first floor, or wheelchair, 
+# I substitute missing date_acc_met values with transfer information and
+# assume that hotel transfers don't meet all unit type accommodations. 606 rows.
+
+supplemented_interesting_ada_transfers_f <- supplement_date_acc_met(transfers_chars_hotel_f) %>%
+  filter(days_until_accommodation_met >= 0)
+
+saveRDS(supplemented_interesting_ada_transfers_f, 
+        file = "shiny/data/supplemented_interesting_ada_transfers_f.rds")
 
 # FUTURE TODO: After we have a Kaplan-Meier plot that is more reliable, 
 # we may be able to have a binary question (was this request met within 30 days)
@@ -659,36 +681,39 @@ create_kaplan_meier <- function(df){
 }
 
 # This creates a Kaplan-Meier plot that takes into account ALL approved ADA 
-# requests and only using the date_acc_met values provided by DHCD (2108
-# requests).
+# requests and only using the 2056 non-negative date_acc_met values provided by 
+# DHCD.
 
-# Note: 1484/2108 (70%) of the date_acc_met values are missing! 
+# Note: 1484/2056 (70%) of the date_acc_met values are missing! 
 # We will need transfer/bed registry data to supplement these missing values.
 
 # Note: 52 requests have a negative # of days_until_accommodation_met which 
-# doesn't make sense. This analysis excludes these requests. This plot is  
-# based on the 572 approved requests that have a positive # of 
-# days_until_accommodation_met. 
+# doesn't make sense. This analysis excludes these requests. 
 
-create_kaplan_meier(approved_adas)
-
-interesting_approved_adas <- approved_adas %>% 
-  filter(interesting == 1) %>%
+approved_adas_include_NA <- approved_adas %>%
   filter(days_until_accommodation_met >= 0 | is.na(days_until_accommodation_met))
+
+create_kaplan_meier(approved_adas_include_NA)
 
 # This creates a Kaplan-Meier plot that takes into account requests that 
 # ask for either scattered site, first floor, or wheelchair accessibility.
-# This only uses the date_acc_met values provided by DHCD (837 requests).
-# Only 163/837 are not NA values.
+# This uses the 837 date_acc_met values provided by DHCD.
 
+# Note: 676/837 (80%) of the date_acc_met values are missing! 
+# We will need transfer/bed registry data to supplement these missing values.
+
+interesting_approved_adas <- approved_adas_include_NA %>% 
+  filter(interesting == 1) 
+  
 create_kaplan_meier(interesting_approved_adas)
 
 # This creates a Kaplan-Meier plot that ONLY takes into account requests that 
 # ask for either scattered site, first floor, or wheelchair and substitutes 
-# missing date_acc_met values with transfer information (332 requests). 
+# missing date_acc_met values with transfer information (606 requests). 
 # The biggest unknown is whether service provider requests were met. 
 
-create_kaplan_meier(supplemented_interesting_ada_transfers)
+create_kaplan_meier(supplemented_interesting_ada_transfers_t)
+create_kaplan_meier(supplemented_interesting_ada_transfers_f)
 ```
 
 $$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilon_i $$
@@ -697,10 +722,13 @@ $$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilo
 # Data tab
 
 # Display general summary graphs of approved ADA request breakdown
+
 # Checkboxes for:
   # All accs vs. just interesting/unit type accs (scat, ffloor, wheelchair)
   # Substitute missing values w transfers
   # Hotel assumption 
+# Date range input
+
 # Display time plot depending on selected boxes
 
 # Model tab
