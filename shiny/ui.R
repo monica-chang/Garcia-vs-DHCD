@@ -11,7 +11,6 @@ library(shiny)
 library(shinythemes)
 library(tidyverse)
 library(rstanarm)
-library(plotly)
 
 # Define UI for application that draws a histogram
 shinyUI(
@@ -22,7 +21,7 @@ shinyUI(
                  p("For my final project, I am working with the Greater Boston
                    Legal Services Housing Unit to provide data analytics support
                    on their class action lawsuit")),
-               
+                  
                tabPanel(
                    "ADA Request Overview",
                    
@@ -35,7 +34,23 @@ shinyUI(
                      tabPanel(
                        "Approved requests",
                        h2("Approved requests"),
-                       p("Here's an overview of the types of accommodations that were most frequently approved from 08/04/15 - 12/25/19.")
+                       p("Here's an overview of the types of accommodations that were most frequently approved from 08/04/15 - 12/25/19."),
+                       fluidRow(style = 'padding:30px;',
+                                column(1),
+                                column(9,
+                                       
+                                       # Plot bar graph of accommodation type breakdown.
+                                       
+                                       plotOutput("all_requests_plot")),
+                                column(1)),
+                       fluidRow(style = 'padding:30px;',
+                                column(2),
+                                column(8,
+                                       
+                                       # Plot bar graph of accommodation type breakdown.
+                                       
+                                       dataTableOutput("all_requests_tbl")),
+                                column(2))
                        ),
                      
                      # Tab two: Accommodation types
@@ -52,7 +67,7 @@ shinyUI(
                                        plotOutput("request_types_plot")),
                                 column(
                                   5,
-                                  tableOutput("request_types_tbl"))
+                                  dataTableOutput("request_types_tbl"))
                        )  
                      ),
                      
@@ -70,17 +85,24 @@ shinyUI(
                                        plotOutput("reason_types_plot")),
                                 column(
                                   5,
-                                  tableOutput("reason_types_tbl"))
+                                  dataTableOutput("reason_types_tbl"))
                        ) 
                      )
                    )
                ),
+              
+              tabPanel(
+                "ADA Request Database",
+                titlePanel("ADA Request Database"),
+                p("Here's a database that shows the date of application, date of decision, and date the accommodation was met for each approved ADA request:"),
+                dataTableOutput("approved_adas")),
         
               tabPanel(
                 "Delays in DHCD Accommodation",
                 titlePanel("Delays in DHCD Accommodation"),
                 p("Here's an interactive time plot that shows the proportion of approved ADA requests the DHCD meets over time."),
                    sidebarLayout(
+                     
                      sidebarPanel(
                        
                        checkboxInput("interesting_select",

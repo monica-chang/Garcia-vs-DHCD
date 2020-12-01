@@ -196,16 +196,11 @@ col_types <- cols(
   closed = col_logical()
 )
 
-# Filter the data to only count approved requests. I pivot my data so that
-# each row represents one request i.e. each row is uniquely identified by 
-# PEI + date_received. 2108/3638 requests are approved. We are assuming 
-# that DHCD correctly approves requests.
+# I pivot my data so that each row represents one request i.e. each row is 
+# uniquely identified by PEI + date_received.
 
-# Note: 1847/2108 PEIs only show up once. Some individuals have submitted 
-# multiple approved requests.
-
-approved_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_processed.csv", col_types = col_types) %>%
-  filter(approved == "Yes") %>%
+all_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_processed.csv", col_types = col_types) %>%
+  mutate(approved = ifelse(approved != "Yes" | is.na(approved), "No", approved)) %>%
   mutate(dummy = 1) %>%
   
   # I pivot my data wider. The names of the columns in my wider table 
@@ -226,7 +221,7 @@ approved_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50
                values_to = "request_reason", 
                values_drop_na = TRUE) %>%
   mutate(dummy = 1) %>%
-  pivot_wider(id_cols = pei:req_physical_modification_to_placement_unit, 
+  pivot_wider(id_cols = pei:req_wheelchair_accessible_placement_unit, 
               names_from = request_reason, 
               values_from = dummy, 
               names_prefix = "reason_",
@@ -253,7 +248,7 @@ approved_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50
   
   # I specify the column order that I want.
   
-  select(pei:hotel_from, acc_met, how_acc_met, interesting,
+  select(pei:hotel_from, approved, acc_met, how_acc_met, interesting,
          req_placement_unit_close_to_service_providers,
          req_scattered_site_placement_unit_co_housing_unit,
          req_other,
@@ -269,6 +264,16 @@ approved_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50
          req_assigned_caretaker_temporary_non_ea_household_member,
          reason_physical_health:reason_other)
 
+# Filter the data to only count approved requests. 
+# 2108/3638 requests are approved. We assume DHCD correctly approves requests.
+
+# Note: 1847/2108 PEIs only show up once. Some individuals have submitted 
+# multiple approved requests.
+
+approved_adas <- all_adas %>%
+  filter(approved == "Yes") %>%
+  select(-approved)
+  
 # Save this tibble as a compressed RDS file to be used in the Shiny app.
 
 saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
@@ -277,6 +282,29 @@ saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
 
 
 ```{r approved ADA request tables and plots}
+
+all_requests <- all_adas %>%
+                pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
+                             names_to = "accommodation_type", 
+                             values_to = "requests") %>%
+                mutate(accommodation_type = recode(accommodation_type, 
+                                                   req_placement_unit_close_to_service_providers = "Placement Unit Close to Service Providers",
+                                                   req_scattered_site_placement_unit_co_housing_unit = "Scattered Site Placement Unit / Co-housing Unit",
+                                                   req_assistance_animal_within_placement_unit = "Assistance Animal within Placement Unit",
+                                                   req_first_floor_or_elevator_access = "First Floor or Elevator Access",
+                                                   req_non_carpeted_placement_unit = "Non Carpeted Placement Unit",
+                                                   req_change_in_ea_regulation_re_housing_plan = "Change in EA Regulation / Re-Housing Plan",
+                                                   req_physical_modification_to_placement_unit = "Physical Modification to Placement Unit",
+                                                   req_access_to_full_cooking_facilities = "Access to Full Cooking Facilities",
+                                                   req_wheelchair_accessible_placement_unit = "Wheelchair Accessible Placement Unit",
+                                                   req_assigned_caretaker_temporary_non_ea_household_member = "Assigned Caretaker / Temporary Non-EA Household Member",
+                                                   req_additional_bedrooms = "Additional bedrooms",
+                                                   req_ac_unit = "AC Unit",
+                                                   req_other = "Other")) %>%
+                group_by(accommodation_type) %>%
+                summarize(total_requests = sum(requests), .groups = "drop") %>%
+                arrange(desc(total_requests)) %>%
+                mutate(percent = total_requests/sum(total_requests))
 
 approved_requests <- approved_adas %>%
                 pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
@@ -302,6 +330,28 @@ approved_requests <- approved_adas %>%
                 mutate(percent = total_requests/sum(total_requests))
 
 saveRDS(approved_requests, file = "shiny/data/approved_requests.rds")
+
+requests <- left_join(all_requests, approved_requests, by = "accommodation_type") %>%
+  rename(num_approved_requests = total_requests.y,
+         num_all_requests = total_requests.x) %>%
+  mutate(percent_approved = num_approved_requests/num_all_requests) %>%
+  select(accommodation_type, num_approved_requests, num_all_requests, percent_approved)
+
+saveRDS(requests, file = "shiny/data/requests.rds")
+
+requests %>%
+  pivot_longer(num_approved_requests:num_all_requests, names_to = "approved", values_to = "num_requests") %>%
+  ggplot(aes(x = num_requests, y = fct_reorder(accommodation_type, num_requests), fill = approved)) +
+    geom_col(position = "dodge") +
+    theme_bw() +
+    theme(legend.position = "bottom") +
+    scale_fill_discrete(name = "Category", labels = c("All requests", "Approved requests")) +
+    scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Change in regulation/re-housing plan", "Non-carpeted", "First floor/elevator", "Assistance animal",  "Other", "Scattered site/Co-housing", "Service providers")) +
+    labs(title = "Number of requests by accommodation type \nand approval status (2015-2019)",
+         subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
+         x = "Number of requests", 
+         y = "Accommodation type",
+         caption = "Source: Department of Housing & Community Development")
 
 # Create a table showing the requests by accommodation type.
 

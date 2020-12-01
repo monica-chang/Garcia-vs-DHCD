@@ -1,4 +1,5 @@
 approved_adas <- readRDS(file = "data/approved_adas.rds") 
+requests <- readRDS(file = "data/requests.rds")
 approved_requests <- readRDS(file = "data/approved_requests.rds") 
 approved_reasons <- readRDS(file = "data/approved_reasons.rds")
 interesting_approved_adas <- readRDS(file = "data/approved_adas.rds") 
@@ -7,8 +8,35 @@ supplemented_interesting_ada_transfers_f <- readRDS(file = "data/supplemented_in
 
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
+    
+    output$approved_adas <- renderDataTable({
+        datatable(head(approved_adas %>% select(pei:days_until_accommodation_met), 20), 
+                  options = list(initComplete = JS(
+                                "function(settings, json) {",
+                                "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});",
+                                "}")
+        ))
+    })
 
-    output$request_types_tbl <- renderTable({approved_requests})
+    output$all_requests_tbl <- renderDataTable({requests})
+    
+    output$all_requests_plot <- renderPlot({
+        requests %>%
+            pivot_longer(num_approved_requests:num_all_requests, names_to = "approved", values_to = "num_requests") %>%
+            ggplot(aes(x = num_requests, y = fct_reorder(accommodation_type, num_requests), fill = approved)) +
+            geom_col(position = "dodge") +
+            theme_bw() +
+            theme(legend.position = "bottom") +
+            scale_fill_discrete(name = "Category", labels = c("All requests", "Approved requests")) +
+            scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Change in regulation/re-housing plan", "Non-carpeted", "First floor/elevator", "Assistance animal",  "Other", "Scattered site/Co-housing", "Service providers")) +
+            labs(title = "Number of requests by accommodation type \nand approval status (2015-2019)",
+                 subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
+                 x = "Number of requests", 
+                 y = "Accommodation type",
+                 caption = "Source: Department of Housing & Community Development")
+    })
+        
+    output$request_types_tbl <- renderDataTable({approved_requests})
         
     output$request_types_plot <- renderPlot({
         
@@ -26,7 +54,7 @@ shinyServer(function(input, output) {
                  caption = "Source: Department of Housing & Community Development")
     })
     
-    output$reason_types_tbl <- renderTable({approved_reasons})
+    output$reason_types_tbl <- renderDataTable({approved_reasons})
     
     output$reason_types_plot <- renderPlot({
         
