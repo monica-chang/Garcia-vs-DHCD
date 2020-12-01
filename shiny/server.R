@@ -10,15 +10,23 @@ supplemented_interesting_ada_transfers_f <- readRDS(file = "data/supplemented_in
 shinyServer(function(input, output) {
     
     output$approved_adas <- renderDataTable({
-        datatable(head(approved_adas %>% select(pei:days_until_accommodation_met), 20), 
-                  options = list(initComplete = JS(
-                                "function(settings, json) {",
-                                "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});",
-                                "}")
-        ))
+        datatable(approved_adas %>% select(pei:days_until_accommodation_met), 
+                  options = list(pageLength = 15,
+                                 initComplete = JS("function(settings, json) {",
+                                                   "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});",
+                                                   "}"))
+        ) 
     })
 
-    output$all_requests_tbl <- renderDataTable({requests})
+    output$all_requests_tbl <- renderDataTable({
+        datatable(requests, 
+                  options = list(dom = 't',
+                                 pageLength = 15,
+                                 initComplete = JS("function(settings, json) {",
+                                                   "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});",
+                                                   "}"))
+        )
+    })
     
     output$all_requests_plot <- renderPlot({
         requests %>%
@@ -36,7 +44,15 @@ shinyServer(function(input, output) {
                  caption = "Source: Department of Housing & Community Development")
     })
         
-    output$request_types_tbl <- renderDataTable({approved_requests})
+    output$request_types_tbl <- renderDataTable({
+        datatable(approved_requests, 
+                  options = list(dom = 't',
+                                 pageLength = 15,
+                                 initComplete = JS("function(settings, json) {",
+                                                   "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});",
+                                                   "}"))
+        )
+    })
         
     output$request_types_plot <- renderPlot({
         
@@ -47,14 +63,22 @@ shinyServer(function(input, output) {
             geom_col() +
             theme_bw() +
             scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Change in regulation/re-housing plan", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Non-carpeted", "Assistance animal", "First floor/elevator",  "Other", "Scattered site/Co-housing", "Service providers")) +
-            labs(title = "Proportion of approved ADA requests \nby accommodation type (2015-2019)",
+            labs(title = "Percentage of approved ADA requests \nby accommodation type (2015-2019)",
                  subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
-                 x = "Proportion of approved requests", 
+                 x = "Percentage of approved requests", 
                  y = "Accommodation type",
                  caption = "Source: Department of Housing & Community Development")
     })
     
-    output$reason_types_tbl <- renderDataTable({approved_reasons})
+    output$reason_types_tbl <- renderDataTable({
+        datatable(approved_reasons, 
+                  options = list(dom = 't',
+                                 pageLength = 15,
+                                 initComplete = JS("function(settings, json) {",
+                                                   "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});",
+                                                   "}"))
+        )
+    })
     
     output$reason_types_plot <- renderPlot({
         
@@ -65,9 +89,9 @@ shinyServer(function(input, output) {
             geom_col() +
             theme_linedraw() +
             scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
-            labs(title = "Proportion of approved ADA requests \nby reason type (2015-2019)",
+            labs(title = "Percentage of approved ADA requests \nby reason type (2015-2019)",
                  subtitle = "Physical health and mental health were the most common reasons for an ADA request.",
-                 x = "Proportion of approved requests", 
+                 x = "Percentage of approved requests", 
                  y = "Reason type",
                  caption = "Source: Department of Housing & Community Development")
     })
@@ -83,15 +107,15 @@ shinyServer(function(input, output) {
                 group_by(days_until_accommodation_met) %>%
                 summarize(num_requests_met = n(), .groups = "drop") %>%
                 mutate(prop_requests_met = num_requests_met/nrow(df_within_date)) %>%
-                mutate(cum_prop_requests = cumsum(prop_requests_met)) %>%
+                mutate(cum_prop_requests = cumsum(prop_requests_met) * 100) %>%
                 ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
                 geom_line() + 
                 geom_vline(xintercept = 30, color = "red", lty = "dashed") +
                 xlim(0, 400) +
-                ylim(0, 1) +
-                labs(title = "Proportion of approved ADA requests that were met", 
+                ylim(0, 100) +
+                labs(title = "Percentage of approved ADA requests that were met", 
                      x = "Days until accommodation was met",
-                     y = "Proportion of requests met",
+                     y = "Percentage of requests met",
                      caption = "Source: Department of Housing & Community Development")
         }
         

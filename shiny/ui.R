@@ -11,6 +11,7 @@ library(shiny)
 library(shinythemes)
 library(tidyverse)
 library(rstanarm)
+library(DT)
 
 # Define UI for application that draws a histogram
 shinyUI(
@@ -60,13 +61,13 @@ shinyUI(
                        h2("Accommodation types"),
                        p("Here's an overview of the types of accommodations that were most frequently requested in approved ADA requests from 08/04/15 - 12/25/19."),
                        fluidRow(style = 'padding:30px;',
-                                column(7,
+                                column(6,
                                        
                                        # Plot bar graph of accommodation type breakdown.
                                        
                                        plotOutput("request_types_plot")),
                                 column(
-                                  5,
+                                  6,
                                   dataTableOutput("request_types_tbl"))
                        )  
                      ),
