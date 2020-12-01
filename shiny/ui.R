@@ -133,19 +133,20 @@ shinyUI(
                   "Model",
                   sidebarLayout(
                     sidebarPanel(
-                      selectInput("accommodation_select",
-                                  "Choose a specific accommodation type:",
+                      selectInput("predictor_select",
+                                  "Choose a predictor:",
                                   choices = c("Scattered Site Placement Unit / Co-housing Unit" = "req_scattered_site_placement_unit_co_housing_unit",
                                               "First Floor or Elevator Access" = "req_first_floor_or_elevator_access",
-                                              "Wheelchair Accessible Placement Unit" = "req_wheelchair_accessible_placement_unit"),
-                                  selected = "Scattered Site Placement Unit / Co-housing Unit"),
-                      selectInput("reason_select",
-                                  "Choose a specific reason type:",
-                                  choices = c("Mental Health" = "reason_mental_health",
+                                              "Wheelchair Accessible Placement Unit" = "req_wheelchair_accessible_placement_unit",
+                                              "Mental Health" = "reason_mental_health",
                                               "Emotional Health" = "reason_emotional_health",
                                               "Physical Health" = "reason_physical_health",
                                               "Developmental Disability/Behavioral Health" = "reason_developmental_disability_behavioral"),
-                                  selected = "Mental Health")
+                                  selected = "Scattered Site Placement Unit / Co-housing Unit"),
+                      selectInput("outcome_select",
+                                  "Choose an outcome:",
+                                  choices = c("Days Until Accommodation Met" = "days_until_accommodation_met"),
+                                  selected = "Days Until Accommodation Met")
                     ),
                     mainPanel(
                       plotOutput("stan_model_plot")

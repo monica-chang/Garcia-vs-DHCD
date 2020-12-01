@@ -146,49 +146,50 @@ shinyServer(function(input, output) {
         })
     
     output$stan_model_tbl <- renderDataTable({ 
-        
-        fit_obj <- stan_glm(as.formula(paste("days_until_accommodation_met ~ ", input$accommodation_select, " + ", input$reason_select)),
-                            data = supplemented_interesting_ada_transfers_t,
-                            refresh = 0,
-                            seed = 9)
-        
-        fit_obj_tbl <- as_tibble(fit_obj)
-        
-        colnames(fit_obj_tbl) <- c("mu", "request", "reason")
-        
-        fit_obj_tbl %>%
+       
+         reactive({
+            stan_glm(reformulate(input$predictor_select, input$outcome_select),
+                     data = supplemented_interesting_ada_transfers_t,
+                     refresh = 0,
+                     seed = 9) %>%
+            as_tibble() %>%
+            rename(mu = `(Intercept)`,
+                   predictor = input$predictor_select) %>%
             mutate(mu_median = median(mu)) %>%
-            mutate(request_median = median(request)) %>%
-            mutate(reason_median = median(reason)) %>%
-            select(mu_median, request_median, reason_median)
+            mutate(predictor_median = median(predictor)) %>%
+            select(mu_median, predictor_median) %>%
+            slice(1)
+         })
         
     })
-    
+        
     output$stan_model_plot <- renderPlot({ 
         
-        fit_obj <- stan_glm(as.formula(paste("days_until_accommodation_met ~ ", input$accommodation_select, " + ", input$reason_select)),
-                            data = supplemented_interesting_ada_transfers_t,
-                            refresh = 0,
-                            seed = 9)
-        
-        fit_obj_tbl <- as_tibble(fit_obj)
-        
-        colnames(fit_obj_tbl) <- c("mu", "request", "reason")
-        
-        fit_obj_tbl %>% 
-            mutate(request = request + mu) %>%
-            mutate(reason = reason + mu) %>%
-            pivot_longer(cols = mu:reason,
+        reactive({
+            stan_glm(reformulate(input$predictor_select, input$outcome_select),
+                     data = supplemented_interesting_ada_transfers_t,
+                     refresh = 0,
+                     seed = 9) %>%
+            as_tibble() %>%
+            rename(mu = `(Intercept)`,
+                   predictor = input$predictor_select) %>%
+            select(mu, predictor) %>%
+            mutate(predictor = predictor + mu) %>%
+            pivot_longer(cols = mu:predictor,
                          names_to = "parameter",
                          values_to = "wait_time") %>%
             ggplot(aes(x = wait_time, color = parameter)) +
-                geom_histogram(aes(y = after_stat(count/sum(count))),
-                               alpha = 0.5, 
-                               bins = 100, 
-                               position = "identity") +
-                labs(title = "Posterior probability distributions",
-                     x = "Average number of days until accommodation met",
-                     y = "Probability")
+            geom_histogram(aes(y = after_stat(count/sum(count))),
+                           alpha = 0.5, 
+                           bins = 100, 
+                           position = "identity") +
+            labs(title = "Posterior probability distributions",
+                 x = "Average number of days until accommodation met",
+                 y = "Probability")
+            
+        })
+        
+        
 
     })
 

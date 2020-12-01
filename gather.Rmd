@@ -797,6 +797,7 @@ fit_obj <- stan_glm(days_until_accommodation_met ~
 
 print(fit_obj, digits = 4)
 
+fit_obj %>% as_tibble()
 # I create a tibble to more easily extract the median values from stan_glm.
 
 fit_obj_tbl <- as_tibble(fit_obj) %>%
