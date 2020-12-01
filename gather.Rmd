@@ -787,72 +787,38 @@ $$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilo
 # Covariates - Reason for request (mental, emotional, physical, developmental) 
 #              Type of request (scattered site, first floor, wheelchair)
 
-set.seed(9)
-
-split <- initial_split(supplemented_interesting_ada_transfers_t, prob = 0.8)
-train <- training(split)
-test <- testing(split)
-folds <- vfold_cv(train, v = 10) # For 10-fold cross-validation
-
-# Basic setup for tidymodel model 
-
-model_wflow <- workflow() %>%
-  add_recipe(recipe(days_until_accommodation_met ~ 
-                      req_scattered_site_placement_unit_co_housing_unit + 
-                      reason_mental_health,
-                    data = train)) %>%
-  add_model(linear_reg() %>% set_engine("stan"))
-
-# Use cross-validation and report the average RMSE over the assessment samples
-
-model_wflow %>%
-  fit_resamples(resamples = folds) %>%
-  collect_metrics()
-
-# Finding RMSE using the model fitted on the cross-validated training data.
-
-# To avoid over-fitting, fit the model on training data and test the 
-# model on testing data.
-
-model_wflow %>% 
-  fit(data = train) %>% # Fit the model on training data
-  predict(new_data = test) %>% # Test the model on testing data.
-  bind_cols(test %>% select(reg_chg)) %>% 
-  metrics(truth = reg_chg, estimate = `.pred`)
-
-
-fit_obj <- stan_glm(days_until_accommodation_met ~ req_scattered_site_placement_unit_co_housing_unit + reason_mental_health + 
-                      req_scattered_site_placement_unit_co_housing_unit*reason_mental_health,
+fit_obj <- stan_glm(days_until_accommodation_met ~ 
+                      req_scattered_site_placement_unit_co_housing_unit + reason_mental_health,
                     data = supplemented_interesting_ada_transfers_t,
-                    refresh = 0)
+                    refresh = 0,
+                    seed = 9)
 
 print(fit_obj, digits = 4)
 
-# req_scattered_site_placement_unit_co_housing_unit -56.2539  13.6447
-# reason_developmental_disability_behavioral -46.5298  17.0417
-# req_first_floor_or_elevator_access 67.5979 14.4899
+# I create a tibble to more easily extract the median values from stan_glm.
 
 fit_obj_tbl <- as_tibble(fit_obj) %>%
   rename(mu = `(Intercept)`) %>%
-  mutate(reason_or_request = req_scattered_site_placement_unit_co_housing_unit + mu) %>%
-  select(-req_scattered_site_placement_unit_co_housing_unit, -sigma) 
-
-# I create a tibble to more easily extract the median values from stan_glm.
-
-fit_obj_stat <- tibble(mu = median(fit_obj_tbl$mu),
-                       reason_or_request = median(fit_obj_tbl$reason_or_request))
-
-saveRDS(fit_obj_stat, file = "shiny/data/fit_obj_stat.rds")
+  mutate(mu = median(mu)) %>%
+  mutate(request = median(request)) %>%
+  mutate(reason = median(reason)) %>%
+  select(mu, request, reason)
 
 fit_obj_tbl %>% 
-  pivot_longer(cols = mu:reason_or_request,
+  mutate(request = req_scattered_site_placement_unit_co_housing_unit + mu) %>%
+  mutate(reason = reason_mental_health + mu) %>%
+  select(mu, request, reason) 
+  pivot_longer(cols = mu:reason,
                names_to = "parameter",
                values_to = "wait_time") %>%
   ggplot(aes(x = wait_time, color = parameter)) +
     geom_histogram(aes(y = after_stat(count/sum(count))),
                    alpha = 0.5, 
                    bins = 100, 
-                   position = "identity")
+                   position = "identity") +
+    labs(title = "Posterior probability distributions",
+         x = "Average number of days until accommodation met",
+         y = "Probability")
 
 ```
 

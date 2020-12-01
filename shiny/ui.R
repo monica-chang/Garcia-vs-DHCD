@@ -148,8 +148,11 @@ shinyUI(
                                   selected = "Mental Health")
                     ),
                     mainPanel(
-                      plotOutput("stan_model")
-                    ))
+                      plotOutput("stan_model_plot")
+                    )),
+                  fluidRow(
+                    dataTableOutput("stan_model_tbl")
+                  )
              
             ),
            tabPanel("About", 
