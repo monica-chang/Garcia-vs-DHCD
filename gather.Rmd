@@ -799,14 +799,17 @@ print(fit_obj, digits = 4)
 
 fit_obj_tbl <- as_tibble(fit_obj) %>%
   rename(mu = `(Intercept)`) %>%
-  mutate(mu = median(mu)) %>%
-  mutate(request = median(request)) %>%
-  mutate(reason = median(reason)) %>%
-  select(mu, request, reason)
+  mutate(mu_median = median(mu)) %>%
+  mutate(request_median = median(req_scattered_site_placement_unit_co_housing_unit)) %>%
+  mutate(reason_median = median(reason_mental_health))
+
+fit_obj_tbl %>%  
+  select(mu_median, request_median, reason_median) %>%
+  slice(1)
 
 fit_obj_tbl %>% 
-  mutate(request = req_scattered_site_placement_unit_co_housing_unit + mu) %>%
-  mutate(reason = reason_mental_health + mu) %>%
+  mutate(req_scattered_site_placement_unit_co_housing_unit = req_scattered_site_placement_unit_co_housing_unit + mu) %>%
+  mutate(reason_mental_health = reason_mental_health + mu) %>%
   select(mu, request, reason) 
   pivot_longer(cols = mu:reason,
                names_to = "parameter",
