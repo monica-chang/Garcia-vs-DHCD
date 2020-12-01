@@ -765,6 +765,8 @@ create_kaplan_meier(approved_adas_no_neg)
 
 interesting_approved_adas <- approved_adas_no_neg %>% 
   filter(interesting == 1) 
+
+saveRDS(interesting_approved_adas, file = "shiny/data/interesting_approved_adas.rds")
   
 create_kaplan_meier(interesting_approved_adas)
 

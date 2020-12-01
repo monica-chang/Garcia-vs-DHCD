@@ -166,6 +166,15 @@ shinyServer(function(input, output) {
     
     output$stan_model_plot <- renderPlot({ 
         
+        fit_obj <- stan_glm(as.formula(paste("days_until_accommodation_met ~ ", input$accommodation_select, " + ", input$reason_select)),
+                            data = supplemented_interesting_ada_transfers_t,
+                            refresh = 0,
+                            seed = 9)
+        
+        fit_obj_tbl <- as_tibble(fit_obj)
+        
+        colnames(fit_obj_tbl) <- c("mu", "request", "reason")
+        
         fit_obj_tbl %>% 
             mutate(request = request + mu) %>%
             mutate(reason = reason + mu) %>%
