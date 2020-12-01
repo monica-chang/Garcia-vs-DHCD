@@ -783,46 +783,63 @@ $$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilo
 
 ```{r model}
 
-# Model tab
-
-# Outcome - Wait time (# of days until request is met)
-# Covariates - Reason for request (mental, emotional, physical, developmental) 
-#              Type of request (scattered site, first floor, wheelchair)
-
 fit_obj <- stan_glm(days_until_accommodation_met ~ 
-                      req_scattered_site_placement_unit_co_housing_unit + reason_mental_health,
+                      req_scattered_site_placement_unit_co_housing_unit,
                     data = supplemented_interesting_ada_transfers_t,
                     refresh = 0,
                     seed = 9)
 
-print(fit_obj, digits = 4)
+print(fit_obj, digits = 4, detail = FALSE)
 
-fit_obj %>% as_tibble()
-# I create a tibble to more easily extract the median values from stan_glm.
+# I create a tibble to more easily extract the median values from stan_glm
+# and graph the posterior distributions.
 
 fit_obj_tbl <- as_tibble(fit_obj) %>%
-  rename(mu = `(Intercept)`) %>%
+  rename(mu = `(Intercept)`,
+         predictor = req_scattered_site_placement_unit_co_housing_unit) %>%
   mutate(mu_median = median(mu)) %>%
-  mutate(request_median = median(req_scattered_site_placement_unit_co_housing_unit)) %>%
-  mutate(reason_median = median(reason_mental_health))
+  mutate(predictor_median = median(predictor))
 
-fit_obj_tbl %>%  
-  select(mu_median, request_median, reason_median) %>%
+# I create a tibble to extract the median values from stan_glm.
+
+fit_obj_stats <- fit_obj_tbl %>%  
+  select(mu_median, predictor_median) %>%
   slice(1)
 
 fit_obj_tbl %>% 
-  mutate(req_scattered_site_placement_unit_co_housing_unit = req_scattered_site_placement_unit_co_housing_unit + mu) %>%
-  mutate(reason_mental_health = reason_mental_health + mu) %>%
-  select(mu, request, reason) 
-  pivot_longer(cols = mu:reason,
+  
+  # I add mu to the predictor column so that the posterior now
+  # represents the average wait time for individuals without the 
+  # specified predictor instead of the average change in wait time.
+  
+  mutate(predictor = predictor + mu) %>%
+  pivot_longer(cols = mu:predictor,
                names_to = "parameter",
                values_to = "wait_time") %>%
-  ggplot(aes(x = wait_time, color = parameter)) +
+  ggplot(aes(x = wait_time, fill = parameter)) +
+    
+    # I use overlapping histograms to display my two posterior distributions.
+  
     geom_histogram(aes(y = after_stat(count/sum(count))),
                    alpha = 0.5, 
                    bins = 100, 
                    position = "identity") +
+    
+    # I create a more descriptive legend title and labels.
+  
+    scale_fill_discrete(name = "Group", labels = c("Without Predictor", "With Predictor")) +
+  
+    # I add two dotted lines to more clearly show the median value for each 
+    # posterior distribution.
+  
+    geom_vline(xintercept = fit_obj_stats$mu_median, 
+               color = "red", 
+               lty = "dashed") +
+    geom_vline(xintercept = fit_obj_stats$predictor_median + fit_obj_stats$mu_median, 
+               color = "blue", 
+               lty = "dashed") +
     labs(title = "Posterior probability distributions",
+         subtitle = "Predictive distributions of average wait time for individuals with and without the specified predictor",
          x = "Average number of days until accommodation met",
          y = "Probability")
 
