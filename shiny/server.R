@@ -215,23 +215,30 @@ shinyServer(function(input, output) {
         
         })
     
-    output$stan_model_tbl <- renderTable({ 
-        
-        stan_glm(paste(input$outcome_select, " ~ ", input$predictor_select),
-                 data = supplemented_interesting_ada_transfers_t,
-                 refresh = 0,
-                 seed = 9) %>%
-            
-            # I create a tibble to more easily extract the median values from 
-            # stan_glm.
-            
-            as_tibble() %>%
-            rename(mu = `(Intercept)`,
-                   predictor = input$predictor_select) %>%
-            mutate(mu_median = median(mu)) %>%
-            mutate(predictor_median = median(predictor)) %>%
-            select(mu_median, predictor_median) %>%
-            slice(1)
+    output$stan_model_tbl <- renderDataTable({ 
+      
+      datatable(stan_glm(paste(input$outcome_select, " ~ ", input$predictor_select),
+                         data = supplemented_interesting_ada_transfers_t,
+                         refresh = 0,
+                         seed = 9) %>%
+                  
+                # I create a tibble to more easily extract the median values from 
+                # stan_glm.
+                
+                as_tibble() %>%
+                rename(mu = `(Intercept)`,
+                       predictor = input$predictor_select) %>%
+                mutate(mu_median = median(mu)) %>%
+                mutate(predictor_median = median(predictor)) %>%
+                select(mu_median, predictor_median) %>%
+                slice(1), 
+                
+                options = list(dom = 't',
+                               pageLength = 1,
+                               initComplete = JS("function(settings, json) {",
+                                                 "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});",
+                                                 "}"))
+      )
       
     })
       
@@ -253,10 +260,35 @@ shinyServer(function(input, output) {
         
         fit_obj_stats <- fit_obj_tbl %>%  
             select(mu_median, predictor_median) %>%
-            slice(1)
+            slice(1) %>%
+            mutate(mu_median = round(mu_median, 2)) %>%
+            mutate(predictor_median = round(predictor_median, 2))         
         
-        paste("The predicted average wait time for requests without the accommodation", 
-        input$predictor_select, "is", fit_obj_stats$mu_median, "days.")
+        outcome_choices <- c("Days Until Accommodation Met" = "days_until_accommodation_met")
+        
+        predictor_choices <- c("Scattered Site Placement Unit / Co-housing Unit" = "req_scattered_site_placement_unit_co_housing_unit",
+                               "First Floor or Elevator Access" = "req_first_floor_or_elevator_access",
+                               "Wheelchair Accessible Placement Unit" = "req_wheelchair_accessible_placement_unit",
+                               "Mental Health" = "reason_mental_health",
+                               "Emotional Health" = "reason_emotional_health",
+                               "Physical Health" = "reason_physical_health",
+                               "Developmental Disability/Behavioral Health" = "reason_developmental_disability_behavioral")
+        
+        paste("I use a Bayesian linear regression model to regress",
+              (names(which(outcome_choices == input$outcome_select))),
+              "on",
+              (names(which(predictor_choices == input$predictor_select))),
+              ".",
+              "The predicted average wait time for requests without the predictor", 
+              (names(which(predictor_choices == input$predictor_select))), 
+              "is", 
+              fit_obj_stats$mu_median, 
+              "days. ",
+              "The predicted change in average wait time for requests with the predictor", 
+              (names(which(predictor_choices == input$predictor_select))), 
+              "is", 
+              fit_obj_stats$predictor_median, 
+              "days.")
     })
     
     output$stan_model_plot <- renderPlot({ 
@@ -289,7 +321,7 @@ shinyServer(function(input, output) {
             pivot_longer(cols = mu:predictor,
                          names_to = "parameter",
                          values_to = "wait_time") %>%
-            ggplot(aes(x = wait_time, color = parameter)) +
+            ggplot(aes(x = wait_time, fill = parameter)) +
                 
                 # I use overlapping histograms to display my two posterior 
                 # distributions.
