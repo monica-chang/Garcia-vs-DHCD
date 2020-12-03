@@ -1,0 +1,34 @@
+<div class="col-sm-9">
+  <h2>The Problem: Justice Delayed is Justice Denied</h2>
+    <p> Certain low income families in Massachusetts facing the harsh reality of homelessness are served by an emergency shelter program, run, since 2009, by the Department of Housing and Community Development (DHCD). Under Massachusetts law, families with children have a “right to shelter,” which requires DHCD to provide housing even if no beds are available. For many years, this has meant placing families in hotels or motels. </p>
+
+    <p> Critics of the hotel/motel overflow strategy point to the shortcomings of living in a motel: social isolation, lack of cooking facilities, and cost burden. In response, Governor Charlie Baker spearheaded the drastic reduction of the number of families placed in hotels and motels. Governor Baker’s decision to shift away from reliance on motels triggered the Garcia vs. DHCD class action lawsuit that filed the following claims: </p>
+    
+        <li> DHCD fails to promptly place families in shelters within twenty miles of their home communities or to restore them to those communities as quickly as possible as mandated by Massachusetts state law.</li>
+        <li> DHCD violates the Americans with Disabilities Act (ADA) by failing to promptly accommodate the the disabilities of homeless individuals.</li>
+      
+    <p> In 2018, the Supreme Judicial Court concluded that more information was necessary to determine whether DHCD unreasonably delays implementing ADA accommodations it approves, and whether these delays are a result of DHCD's policy of transferring EA participants with disabilities only when "administratively feasible."</p>
+    
+  <h2>The Question</h2>
+  
+    <b><i>What percentage of approved disability requests are actually met? How long does it take DHCD to implement these approved accommodations? Is this happening within a reasonable timeframe? Do certain types of accommodations result in longer delays?</i></b> 
+    
+    <p>The goal of this project is to answer these questions using data on ADA requests (individual applications for disability accommodations), transfers within the shelter system, and characteristics of various shelter locations. This data was provided by the DHCD and ranges from 2015-2019. I hope to provide a basic characterization of the ADA requests dataset by mapping out the most frequently requested disability accommodations and most frequently approved disability accommodations. Unfortunately, the provided data is insufficient to confidently answer the above question. By making certain assumptions, I attempt to calculate average delays in disability accommodation. Using data visualization and statistical analysis, I hope to provide commentary on the data that I have aquired.</p>
+
+  <h2>Explaining Our Data Assumptions</h2>
+  <p>
+    <b>There were several obstacles to this data analysis:</b>
+  </p>
+  <p>
+    <b>First</b>, the biggest issue with the dataset provided by DHCD is the fact that 70% of "date_accommodation_met" values are missing. Given that we have no information about if/when/how approved accommodations were met 70% of the time, we are forced to deduce these from transfer data and shelter characteristics. 
+  </p>
+  <p>
+    <b>Only show unit type accommodations:</b> Since we only have information about where and when individuals were transferred within the EA Shelter system, we are only able to deduce the date an accommodation was met for accommodations that <i>require an internal or external transfer</i> to be met. We are able to do this for the following accommodations: proximity to service providers, scattered site/co-housing, first floor/elevator access, wheelchair accessibility. Because we lack information about the zipcode of service providers for each request, we only look at the following unit-type accommodations: scattered site/co-housing, first floor/elevator access, wheelchair accessibility.
+  </p>
+  <p>
+    <b>Substitute missing values with transfer</b> Since we only have information about where and when individuals were transferred within the EA Shelter system, we are only able to deduce the date an accommodation was met for accommodations that <i>require an internal or external transfer</i> to be met. We are able to do this for the following accommodations: proximity to service providers, scattered site/co-housing, first floor/elevator access, wheelchair accessibility. Because we lack information about the zipcode of service providers for each request, we only look at scattered site/co-housing, first floor/elevator access, wheelchair accessibility.
+  </p>
+    
+
+  </p>
+</div>

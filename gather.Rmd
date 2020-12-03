@@ -806,6 +806,8 @@ fit_obj_stats <- fit_obj_tbl %>%
   select(mu_median, predictor_median) %>%
   slice(1)
 
+fit_obj_stats
+
 fit_obj_tbl %>% 
   
   # I add mu to the predictor column so that the posterior now
