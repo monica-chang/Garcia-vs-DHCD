@@ -25,7 +25,7 @@ shinyUI(
         
         tabPanel(
           "Delays in Accommodation",
-          titlePanel("Delays in Accommodation"),
+          includeHTML("problem.html"),
           p("Here is an interactive time plot that shows the percentage of approved ADA requests that are met over time:"),
           sidebarLayout(
             
@@ -150,7 +150,7 @@ shinyUI(
          # select the data assumptions they wish to make.
       
          tabPanel(
-              "Model",
+              "Modelling Delays",
               sidebarLayout(
                 sidebarPanel(
                   selectInput("predictor_select",
@@ -172,7 +172,8 @@ shinyUI(
                   plotOutput("stan_model_plot")
                 )),
               fluidRow(
-                dataTableOutput("stan_model_tbl")
+                tableOutput("stan_model_tbl"),
+                textOutput("stan_text")
               )
               # TODO: There must a statistical model, along with an associated discussion of its creation and interpretation
          

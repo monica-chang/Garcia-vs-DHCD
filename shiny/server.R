@@ -227,65 +227,98 @@ shinyServer(function(input, output) {
             
             as_tibble() %>%
             rename(mu = `(Intercept)`,
-                   predictor = req_scattered_site_placement_unit_co_housing_unit) %>%
+                   predictor = input$predictor_select) %>%
             mutate(mu_median = median(mu)) %>%
             mutate(predictor_median = median(predictor)) %>%
             select(mu_median, predictor_median) %>%
             slice(1)
       
     })
+      
+    
+    output$stan_text <- renderText({ 
         
+        fit_obj <- stan_glm(paste(input$outcome_select, " ~ ", input$predictor_select),
+                            data = supplemented_interesting_ada_transfers_t,
+                            refresh = 0,
+                            seed = 9)
+        
+        fit_obj_tbl <- as_tibble(fit_obj) %>%
+            rename(mu = `(Intercept)`,
+                   predictor = input$predictor_select) %>%
+            mutate(mu_median = median(mu)) %>%
+            mutate(predictor_median = median(predictor))
+        
+        # I create a tibble to extract the median values from stan_glm.
+        
+        fit_obj_stats <- fit_obj_tbl %>%  
+            select(mu_median, predictor_median) %>%
+            slice(1)
+        
+        paste("The predicted average wait time for requests without the accommodation", 
+        input$predictor_select, "is", fit_obj_stats$mu_median, "days.")
+    })
+    
     output$stan_model_plot <- renderPlot({ 
             
         # I use stan_glm to generate my linear regression model.
         
-        stan_glm(paste(input$outcome_select, " ~ ", input$predictor_select),
-                 data = supplemented_interesting_ada_transfers_t,
-                 refresh = 0,
-                 seed = 9) %>%
-        as_tibble() %>%
-        rename(mu = `(Intercept)`,
-               predictor = input$predictor_select) %>%
-        select(mu, predictor) %>%
-            
+        fit_obj <- stan_glm(paste(input$outcome_select, " ~ ", input$predictor_select),
+                            data = supplemented_interesting_ada_transfers_t,
+                            refresh = 0,
+                            seed = 9)
+        
+        fit_obj_tbl <- as_tibble(fit_obj) %>%
+            rename(mu = `(Intercept)`,
+                   predictor = input$predictor_select) %>%
+            mutate(mu_median = median(mu)) %>%
+            mutate(predictor_median = median(predictor))
+        
+        # I create a tibble to extract the median values from stan_glm.
+        
+        fit_obj_stats <- fit_obj_tbl %>%  
+            select(mu_median, predictor_median) %>%
+            slice(1)
+        
         # I add mu to the predictor column so that the posterior now
         # represents the average wait time for individuals without the 
         # specified predictor instead of the average change in wait time.
             
-        mutate(predictor = predictor + mu) %>%
-        pivot_longer(cols = mu:predictor,
-                     names_to = "parameter",
-                     values_to = "wait_time") %>%
-        ggplot(aes(x = wait_time, color = parameter)) +
+        fit_obj_tbl %>%
+            mutate(predictor = predictor + mu) %>%
+            pivot_longer(cols = mu:predictor,
+                         names_to = "parameter",
+                         values_to = "wait_time") %>%
+            ggplot(aes(x = wait_time, color = parameter)) +
+                
+                # I use overlapping histograms to display my two posterior 
+                # distributions.
+                
+                geom_histogram(aes(y = after_stat(count/sum(count))),
+                               alpha = 0.5, 
+                               bins = 100, 
+                               position = "identity") +
+                
+                # I create a more descriptive legend title and labels.
+                
+                scale_fill_discrete(name = "Group", 
+                                    labels = c("Without Predictor", 
+                                               "With Predictor")) +
+                
+                # I add two dotted lines to more clearly show the median value for each 
+                # posterior distribution.
+                
+                geom_vline(xintercept = fit_obj_stats$mu_median, 
+                           color = "red", 
+                           lty = "dashed") +
+                geom_vline(xintercept = fit_obj_stats$predictor_median + fit_obj_stats$mu_median, 
+                           color = "blue", 
+                           lty = "dashed") +
+                labs(title = "Posterior probability distributions",
+                     subtitle = "Predictive distributions of average wait time for individuals with and without the specified predictor",
+                     x = "Average number of days until accommodation met",
+                     y = "Probability")
             
-            # I use overlapping histograms to display my two posterior 
-            # distributions.
-            
-            geom_histogram(aes(y = after_stat(count/sum(count))),
-                           alpha = 0.5, 
-                           bins = 100, 
-                           position = "identity") +
-            
-            # I create a more descriptive legend title and labels.
-            
-            scale_fill_discrete(name = "Group", 
-                                labels = c("Without Predictor", 
-                                           "With Predictor")) +
-            
-            # I add two dotted lines to more clearly show the median value for each 
-            # posterior distribution.
-            
-            geom_vline(xintercept = fit_obj_stats$mu_median, 
-                       color = "red", 
-                       lty = "dashed") +
-            geom_vline(xintercept = fit_obj_stats$predictor_median + fit_obj_stats$mu_median, 
-                       color = "blue", 
-                       lty = "dashed") +
-            labs(title = "Posterior probability distributions",
-                 subtitle = "Predictive distributions of average wait time for individuals with and without the specified predictor",
-                 x = "Average number of days until accommodation met",
-                 y = "Probability")
-        
 
     })
 
