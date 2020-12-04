@@ -111,7 +111,6 @@ shinyUI(
                           p("This model has a high RMSE value - meaning that it has little predictive power. Considering our small sample size, incomplete information, and the multitude of factors that go into determining any particular individual's disability accommodation wait time, this is unsurprising.")
                    ) 
           )
-          # TODO: There must a statistical model, along with an associated discussion of its creation and interpretation
           
         ),
       
@@ -231,7 +230,7 @@ shinyUI(
                               "This dataset contains information about the disability accommodations requested and the reasons for each individual application."),
                               p(strong("Transfers: "),
                               "This dataset contains information about external transfers (transfers from one shelter to another) and internal transfers (within one shelter) for every individual in the EA shelter system."),
-                              p(strong("Shelter characteritics: "), 
+                              p(strong("Shelter characteristics: "), 
                               "This dataset contains information about the characteristics of all the shelters within the EA system.")
                      )
               )

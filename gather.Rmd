@@ -787,7 +787,7 @@ $$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilo
 ```{r model}
 
 fit_obj <- stan_glm(days_until_accommodation_met ~ 
-                      transfer_type_specific,
+                      req_scattered_site_placement_unit_co_housing_unit,
                     data = supplemented_interesting_ada_transfers_t,
                     refresh = 0,
                     seed = 9)
@@ -848,6 +848,9 @@ fit_obj_tbl %>%
          x = "Average number of days until accommodation met",
          y = "Probability")
 
+# TODO: Add geom_density_ridges plot to show how the posteriors for different 
+# types/reasons compare.
+
 ```
 
 ```{r generating misc spreadsheets as requested}
@@ -897,10 +900,12 @@ ada_date_acc_met_filled <- approved_adas %>%
          req_first_floor_or_elevator_access == 1 |
          req_wheelchair_accessible_placement_unit == 1 |
          req_additional_bedrooms == 1) %>%
-  arrange(desc(date_received)) 
+  arrange(desc(date_received)) %>%
+  select(pei, name)
 
 ada_date_acc_met_filled_sample <- ada_date_acc_met_filled %>%
-  sample_n(50)
+  sample_n(50) %>%
+  select(pei, name)
 
 write_csv(ada_date_acc_met_filled, 
           path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled.csv")
@@ -908,9 +913,41 @@ write_csv(ada_date_acc_met_filled,
 write_csv(ada_date_acc_met_filled_sample, 
           path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_sample.csv")
 
-# DHCD's date_acc_met determination may not be correct. 
-# Check 10% random cases by hand to stress test. 
-# Did a transfer happen before their date_acc_met? PDF analysis?
+# I repeat the above except also merge in the transfer data for these individuals.
+
+ada_date_acc_met_filled_t <- 
+  left_join(ada_date_acc_met_filled, transfers_chars_hotel_t, by = c("pei", "name")) %>%
+  group_by(pei) %>%
+  distinct(transfer_location, .keep_all = TRUE) %>%
+  arrange(desc(date_received)) 
+
+ada_date_acc_met_filled_sample_t <- 
+  left_join(ada_date_acc_met_filled_sample, transfers_chars_hotel_t, by = c("pei", "name")) %>%
+  group_by(pei) %>%
+  distinct(transfer_location, .keep_all = TRUE) %>%
+  arrange(desc(date_received)) 
+
+write_csv(ada_date_acc_met_filled_t, 
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_t.csv")
+
+write_csv(ada_date_acc_met_filled_sample_t, 
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_sample_t.csv")
+
+# Generate a spreadsheet of date_approved, date of internal & external transfers
+# for relevant PEIs for Dan.
+
+ada_no_transfers <- read_excel("raw_data/ada_no_transfer.xlsx") %>%
+  clean_names() %>%
+  mutate(pei = gsub("-", "", pei))
+
+ada_no_transfers_supplemented <- 
+  left_join(ada_no_transfers, transfers_chars_hotel_t, by = c("pei", "name")) %>% 
+  select(pei:days_until_accommodation_met, transfer_type:transfer_location) %>%
+  group_by(pei) %>%
+  distinct(transfer_location, .keep_all = TRUE)
+
+write_csv(ada_no_transfers_supplemented, 
+          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_no_transfers_supplemented.csv")
 
 ```
 
