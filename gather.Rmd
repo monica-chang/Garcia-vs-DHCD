@@ -333,7 +333,8 @@ approved_requests <- approved_adas %>%
   group_by(accommodation_type) %>%
   summarize(total_requests = sum(requests), .groups = "drop") %>%
   arrange(desc(total_requests)) %>%
-  mutate(percent = total_requests/sum(total_requests) * 100)
+  mutate(percent = total_requests/sum(total_requests) * 100) %>%
+  mutate(percent = round(percent, 2))
 
 saveRDS(approved_requests, file = "shiny/data/approved_requests.rds")
 
@@ -348,7 +349,8 @@ requests <- left_join(all_requests, approved_requests, by = "accommodation_type"
   # approved for each accommodation type.
   
   mutate(percent_approved = num_approved_requests/num_all_requests * 100) %>%
-  select(accommodation_type, num_approved_requests, num_all_requests, percent_approved)
+  mutate(percent_approved = round(percent_approved, 2)) %>%
+  select(accommodation_type, num_approved_requests, num_all_requests, percent_approved) 
 
 saveRDS(requests, file = "shiny/data/requests.rds")
 
@@ -397,7 +399,8 @@ approved_reasons <- approved_adas %>%
   group_by(reason_type) %>%
   summarize(total_requests = sum(requests), .groups = "drop") %>%
   arrange(desc(total_requests)) %>%
-  mutate(percent = total_requests/sum(total_requests) * 100)
+  mutate(percent = total_requests/sum(total_requests) * 100) %>%
+  mutate(percent = round(percent, 2))
 
 saveRDS(approved_reasons, file = "shiny/data/approved_reasons.rds")
 
@@ -784,7 +787,7 @@ $$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilo
 ```{r model}
 
 fit_obj <- stan_glm(days_until_accommodation_met ~ 
-                      req_scattered_site_placement_unit_co_housing_unit,
+                      transfer_type_specific,
                     data = supplemented_interesting_ada_transfers_t,
                     refresh = 0,
                     seed = 9)

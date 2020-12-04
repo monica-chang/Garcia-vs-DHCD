@@ -231,6 +231,8 @@ shinyServer(function(input, output) {
                 mutate(mu_median = median(mu)) %>%
                 mutate(predictor_median = median(predictor)) %>%
                 select(mu_median, predictor_median) %>%
+                mutate(mu_median = round(mu_median, 2)) %>%
+                mutate(predictor_median = round(predictor_median, 2)) %>%
                 slice(1), 
                 
                 options = list(dom = 't',
@@ -262,7 +264,12 @@ shinyServer(function(input, output) {
             select(mu_median, predictor_median) %>%
             slice(1) %>%
             mutate(mu_median = round(mu_median, 2)) %>%
-            mutate(predictor_median = round(predictor_median, 2))         
+            mutate(predictor_median = round(predictor_median, 2))   
+        
+        rmse <- tibble(truth = supplemented_interesting_ada_transfers_t$days_until_accommodation_met, forecast = predict(fit_obj)) %>% 
+          mutate(sq_diff = (forecast - truth)^2) %>% 
+          summarize(rmse = sqrt(mean(sq_diff))) %>%
+          mutate(rmse = round(rmse, 2))   
         
         outcome_choices <- c("Days Until Accommodation Met" = "days_until_accommodation_met")
         
@@ -274,7 +281,7 @@ shinyServer(function(input, output) {
                                "Physical Health" = "reason_physical_health",
                                "Developmental Disability/Behavioral Health" = "reason_developmental_disability_behavioral")
         
-        paste("I use a Bayesian linear regression model to regress",
+        paste("To compare whether requests that ask for certain accommodations or list certain reasons have longer or shorter delays in accommodation, I created a linear regression model. I use a Bayesian linear regression model to regress",
               (names(which(outcome_choices == input$outcome_select))),
               "on",
               (names(which(predictor_choices == input$predictor_select))),
@@ -288,8 +295,12 @@ shinyServer(function(input, output) {
               (names(which(predictor_choices == input$predictor_select))), 
               "is", 
               fit_obj_stats$predictor_median, 
-              "days.")
+              "days.",
+              "The RMSE value for this model is ",
+              rmse,
+              ".")
     })
+  
     
     output$stan_model_plot <- renderPlot({ 
             

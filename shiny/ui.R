@@ -75,6 +75,8 @@ shinyUI(
         
         tabPanel(
           "Modelling Delays",
+          h2("Modelling Delays in Accommodation"),
+          br(),
           sidebarLayout(
             sidebarPanel(
               selectInput("predictor_select",
@@ -101,8 +103,13 @@ shinyUI(
                    ),
                    column(2),
                    column(8,
-                          textOutput("stan_text")
-                   )
+                          h3("Model Creation & Interpretation"),
+                          textOutput("stan_text"),
+                          h3("Major Caveats"),
+                          p("For this model, I use 2015-2019 data only containing requests with unit type accommodations, substitute missing values with transfer data, and assume hotel transfers meet unit type accommodations. As a result, I am only using 606/2108 (28.7%) of all approved ADA requests."),
+                          p("Proximity to service providers is by far the most frequently requested accommodation (44.4% of all approved requests). However, because I currently lack information about the zipcode of service providers, I am unable to account for this group in my analysis."),
+                          p("This model has a high RMSE value - meaning that it has little predictive power. Considering our small sample size, incomplete information, and the multitude of factors that go into determining any particular individual's disability accommodation wait time, this is unsurprising.")
+                   ) 
           )
           # TODO: There must a statistical model, along with an associated discussion of its creation and interpretation
           
@@ -199,28 +206,35 @@ shinyUI(
             dataTableOutput("approved_adas")),
       
       
-        # TODO: Update About page
-      
         tabPanel("About", 
-             p("For my final project, I am working with the Greater Boston
-               Legal Services Housing Unit to provide data analytics support
-               on their class action lawsuit", em("(Garcia vs. DHCD)"), 
-               "against the MA Emergency Assistance Shelter system.",
-               "I am analyzing data specifically related to the lawsuit claim
-               under the Americans With Disabilities Act.",
-               "Many families that request a disability-related accommodation 
-               are told that their request will be met when administratively 
-               feasible.",
-               "However, this can take months.", 
-               "I am cleaning and merging data provided by the MA Department 
-               of Housing and Community Development to analyze how long these 
-               delays take, and whether certain types of accommodation 
-               requests result in longer delays.",
-               "I am merging data for accommodation requests, shelter tranfers, 
-               shelter characteristics, and exit information to answer these 
-               questions.",
-               "I am also merging data across time since GBLS received one 
-               batch of data in 2018 and another batch in 2020."),
-             p(a("Here is a link to my Github repo!", href = "https://github.com/monica-chang/Garcia-vs-DHCD")))
-    
+             fluidRow(style = 'padding:30px;',
+                      column(5,
+                             h3("About Me"),
+                             p("My name is Monica Chang, and I'm currently a sophomore at Harvard College. 
+                        I plan on concentrating in Social Studies with a secondary in Computer Science. I'm interested in understanding the causes and consequences of societal inequality. I'm especially interested in housing justice, neighborhood effects, and upward mobility in urban America.
+                        You can find me at monica_chang@college.harvard.edu, check out the original code on my ",
+                               a(href = "https://github.com/monica-chang/Garcia-vs-DHCD", "Github account"), 
+                               "or connect with me on ",
+                               a(href = "https://www.linkedin.com/in/monica-yang-chang", "LinkedIn"), 
+                               ".")
+                     ), 
+                     column(1),
+                     column(6,  
+                            h3("About the Project"),
+                            p("When is justice delayed justice denied? This fall, I worked with the Greater Boston Legal Services Housing Unit to provide support on their class action lawsuit against the Massachusetts Department of Housing and Community Development (DHCD). When a homeless family with disability needs makes a request for accommodation and the request is approved, the DHCD promises to implement the disability accommodation when ",
+                            tags$q("administratively feasible."),
+                            "In my project, I investigate whether the DHCD violates the Americans with Disabilities Act by failing to accommodate the disabilities of homeless individuals within a reasonable timeframe."),
+                            br(),
+                            h3("About the Data"),
+                            p("I am using data provided by the MA Department of Housing and Community Development from 2015-2019. My analysis relies primarily upon 3 datasets:"),
+                              p(strong("ADA Requests: "),
+                              "This dataset contains information about the disability accommodations requested and the reasons for each individual application."),
+                              p(strong("Transfers: "),
+                              "This dataset contains information about external transfers (transfers from one shelter to another) and internal transfers (within one shelter) for every individual in the EA shelter system."),
+                              p(strong("Shelter characteritics: "), 
+                              "This dataset contains information about the characteristics of all the shelters within the EA system.")
+                     )
+              )
+        )
+          
   ))
