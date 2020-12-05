@@ -1,4 +1,5 @@
-# I read RDS files relevant to my Shiny app.
+
+# I read in RDS files relevant to my Shiny app.
 
 approved_adas <- readRDS(file = "data/approved_adas.rds") 
 requests <- readRDS(file = "data/requests.rds")
@@ -11,11 +12,15 @@ supplemented_interesting_ada_transfers_f <- readRDS(file = "data/supplemented_in
 
 shinyServer(function(input, output) {
     
-    # I create a data table for approved ADA requests - removing the name to
-    # anonymize the data.
+    # I create a data table for approved ADA requests - removing names to
+    # anonymize the data. 
     
     output$approved_adas <- renderDataTable({
         datatable(approved_adas %>% select(pei, date_received:days_until_accommodation_met), 
+                  
+                  # I specify certain options to limit the number of rows that
+                  # appear on the page and edit the color of the header.
+                  
                   options = list(pageLength = 15,
                                  initComplete = JS("function(settings, json) {",
                                                    "$(this.api().table().header()).css({'background-color': '#000', 'color': '#fff'});",
@@ -28,6 +33,11 @@ shinyServer(function(input, output) {
 
     output$all_requests_tbl <- renderDataTable({
         datatable(requests, 
+                  
+                  # I specify certain options to eliminate certain default 
+                  # features of a data table, limit the number of rows that
+                  # appear on the page, and edit the color of the header.
+                  
                   options = list(dom = 't',
                                  pageLength = 15,
                                  initComplete = JS("function(settings, json) {",
@@ -76,6 +86,11 @@ shinyServer(function(input, output) {
         
     output$request_types_tbl <- renderDataTable({
         datatable(approved_requests, 
+                  
+                  # I specify certain options to eliminate certain default 
+                  # features of a data table, limit the number of rows that
+                  # appear on the page, and edit the color of the header.
+                  
                   options = list(dom = 't',
                                  pageLength = 15,
                                  initComplete = JS("function(settings, json) {",
@@ -112,6 +127,11 @@ shinyServer(function(input, output) {
     
     output$reason_types_tbl <- renderDataTable({
         datatable(approved_reasons, 
+                  
+                  # I specify certain options to eliminate certain default 
+                  # features of a data table, limit the number of rows that
+                  # appear on the page, and edit the color of the header.
+                  
                   options = list(dom = 't',
                                  pageLength = 15,
                                  initComplete = JS("function(settings, json) {",
@@ -217,6 +237,9 @@ shinyServer(function(input, output) {
     
     output$stan_model_tbl <- renderDataTable({ 
       
+      # I use stan_glm to regress the user-inputted outcome on the 
+      # user-inputted predictor.
+      
       datatable(stan_glm(paste(input$outcome_select, " ~ ", input$predictor_select),
                          data = supplemented_interesting_ada_transfers_t,
                          refresh = 0,
@@ -231,9 +254,16 @@ shinyServer(function(input, output) {
                 mutate(mu_median = median(mu)) %>%
                 mutate(predictor_median = median(predictor)) %>%
                 select(mu_median, predictor_median) %>%
+                  
+                # I round the median values to only display 2 decimal values.
+                  
                 mutate(mu_median = round(mu_median, 2)) %>%
                 mutate(predictor_median = round(predictor_median, 2)) %>%
                 slice(1), 
+                
+                # I specify certain options to eliminate certain default 
+                # features of a data table, limit the number of rows that
+                # appear on the page, and edit the color of the header.
                 
                 options = list(dom = 't',
                                pageLength = 1,
@@ -246,6 +276,9 @@ shinyServer(function(input, output) {
       
     
     output$stan_text <- renderText({ 
+      
+        # I use stan_glm to regress the user-inputted outcome on the 
+        # user-inputted predictor.
         
         fit_obj <- stan_glm(paste(input$outcome_select, " ~ ", input$predictor_select),
                             data = supplemented_interesting_ada_transfers_t,
@@ -266,11 +299,17 @@ shinyServer(function(input, output) {
             mutate(mu_median = round(mu_median, 2)) %>%
             mutate(predictor_median = round(predictor_median, 2))   
         
-        rmse <- tibble(truth = supplemented_interesting_ada_transfers_t$days_until_accommodation_met, forecast = predict(fit_obj)) %>% 
+        # I calculate the RMSE manually.
+        
+        rmse <- tibble(truth = supplemented_interesting_ada_transfers_t$days_until_accommodation_met, 
+                       forecast = predict(fit_obj)) %>% 
           mutate(sq_diff = (forecast - truth)^2) %>% 
           summarize(rmse = sqrt(mean(sq_diff))) %>%
           mutate(rmse = round(rmse, 2))   
         
+        # I create vectors for outcome choices and predictor choices so
+        # I can display more professional text on the Shiny app.
+      
         outcome_choices <- c("Days Until Accommodation Met" = "days_until_accommodation_met")
         
         predictor_choices <- c("Scattered Site Placement Unit / Co-housing Unit" = "req_scattered_site_placement_unit_co_housing_unit",
@@ -280,6 +319,10 @@ shinyServer(function(input, output) {
                                "Emotional Health" = "reason_emotional_health",
                                "Physical Health" = "reason_physical_health",
                                "Developmental Disability/Behavioral Health" = "reason_developmental_disability_behavioral")
+        
+        # I use paste to display text that contains user-inputted values. 
+        # I use names(which()) to select the correct corresponding text from
+        # the character vectors above.
         
         paste("To compare whether requests that ask for certain accommodations or list certain reasons have longer or shorter delays in accommodation, I created a linear regression model. I use a Bayesian linear regression model to regress",
               (names(which(outcome_choices == input$outcome_select))),
@@ -348,8 +391,8 @@ shinyServer(function(input, output) {
                                     labels = c("Without Predictor", 
                                                "With Predictor")) +
                 
-                # I add two dotted lines to more clearly show the median value for each 
-                # posterior distribution.
+                # I add two dotted lines to more clearly show the median value 
+                # for each posterior distribution.
                 
                 geom_vline(xintercept = fit_obj_stats$mu_median, 
                            color = "red", 

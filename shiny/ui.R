@@ -33,9 +33,16 @@ shinyUI(
             p("The goal of this project is to answer these questions using data on ADA requests (individual applications for disability accommodations), transfers within the shelter system, and characteristics of various shelter locations. This data was provided by the DHCD and ranges from 2015-2019."),
             p("Here is a plot that shows the percentage of approved ADA requests that are met over time based on certain data assumption (see below for further explanation):"),
             br(),
+            
+            # I use the sidebarLayout to allows the user to input certain 
+            # assumptions and view the corresponding plot.
+            
             sidebarLayout(
               
               sidebarPanel(
+                
+                # The user can check certain data assumptions and input a 
+                # date range.
                 
                 checkboxInput("interesting_select",
                               "Only show unit type accommodations",
@@ -46,6 +53,10 @@ shinyUI(
                 checkboxInput("hotel_select",
                               "Assume hotel transfers meet unit type accommodations",
                               TRUE),
+                
+                # The default date range is set to the earliest and latest 
+                # date in the dataset.
+                
                 dateRangeInput("date_range", "Date range:",
                                start  = "2015-08-03",
                                end    = "2019-12-26",
@@ -57,6 +68,11 @@ shinyUI(
               mainPanel(
                 plotOutput("request_time_plot")
               )),
+            
+            # I explain the data assumptions in more detail so that the 
+            # user understands the choices provided in the sidebar more 
+            # clearly.
+            
             h3("Explaining Our Data Assumptions"),
             p("Unfortunately, the data provided by DHCD are insufficient to directly answer the above question. 70% of values are missing for the date each approved request was met. Given that I have no information about if/when/how approved accommodations were met 70% of the time, I make several reasonable assumptions to deduce this information:"),
             p(strong("Only show unit type accommodations: "),
@@ -77,6 +93,10 @@ shinyUI(
           "Modelling Delays",
           h2("Modelling Delays in Accommodation"),
           br(),
+          
+          # I use the sidebarLayout to allow the user to input a predictor
+          # and outcome and view the corresponding posterior distributions.
+          
           sidebarLayout(
             sidebarPanel(
               selectInput("predictor_select",
@@ -97,18 +117,26 @@ shinyUI(
             mainPanel(
               plotOutput("stan_model_plot")
             )),
+          
+          # I use fluidRow and padding to allow for a more flexible display.
+          
           fluidRow(style = 'padding:30px;',
                    column(2,
                           dataTableOutput("stan_model_tbl")
                    ),
                    column(2),
+                   
+                   # I discuss my model creation and interpretation and major
+                   # caveats to provide the user with enough information to
+                   # understand my regression model.
+                   
                    column(8,
                           h3("Model Creation & Interpretation"),
                           textOutput("stan_text"),
                           h3("Major Caveats"),
                           p("For this model, I use 2015-2019 data only containing requests with unit type accommodations, substitute missing values with transfer data, and assume hotel transfers meet unit type accommodations. As a result, I am only using 606/2108 (28.7%) of all approved ADA requests."),
                           p("Proximity to service providers is by far the most frequently requested accommodation (44.4% of all approved requests). However, because I currently lack information about the zipcode of service providers, I am unable to account for this group in my analysis."),
-                          p("This model has a high RMSE value - meaning that it has little predictive power. Considering our small sample size, incomplete information, and the multitude of factors that go into determining any particular individual's disability accommodation wait time, this is unsurprising.")
+                          p("This model has a high RMSE value - meaning that there is a large range of uncertainty about the true median value. Considering our small sample size, incomplete information, and the multitude of factors that go into determining any particular individual's disability accommodation wait time, this is unsurprising.")
                    ) 
           )
           
@@ -131,12 +159,16 @@ shinyUI(
                  tabPanel(
                    "Approved requests",
                    h2("Approved requests"),
+                   
+                   # I use fluidRow and padding to allow for a more flexible display.
+                   
                    p("Here is an overview of the types of accommodations that were most frequently approved from 08/04/15 - 12/25/19."),
                    fluidRow(style = 'padding:30px;',
                             column(1),
                             column(9,
                                    
-                                   # Plot dodged bar graph of all requests and approved requests.
+                                   # Plot dodged bar graph of all requests and 
+                                   # approved requests.
                                    
                                    plotOutput("all_requests_plot")),
                             column(1)),
@@ -158,6 +190,9 @@ shinyUI(
                    "Accommodation types",
                    h2("Accommodation types"),
                    p("Here is an overview of the types of accommodations that were most frequently requested in approved ADA requests from 08/04/15 - 12/25/19."),
+                   
+                   # I use fluidRow and padding to allow for a more flexible display.
+                   
                    fluidRow(style = 'padding:30px;',
                             column(6,
                                    
@@ -178,6 +213,9 @@ shinyUI(
                    "Reason types",
                    h2("Reason types"),
                    p("Here is an overview of the reasons that were most frequently cited for approved ADA requests from 08/04/15 - 12/25/19."),
+                   
+                   # I use fluidRow and padding to allow for a more flexible display.
+                   
                    fluidRow(style = 'padding:30px;',
                             column(7,
                                    
@@ -204,36 +242,36 @@ shinyUI(
             p("Here is a database that shows the date of application, date of decision, and date the accommodation was met for each approved ADA request:"),
             dataTableOutput("approved_adas")),
       
-      
-        tabPanel("About", 
-             fluidRow(style = 'padding:30px;',
-                      column(5,
-                             h3("About Me"),
-                             p("My name is Monica Chang, and I'm currently a sophomore at Harvard College. 
-                        I plan on concentrating in Social Studies with a secondary in Computer Science. I'm interested in understanding the causes and consequences of societal inequality. I'm especially interested in housing justice, neighborhood effects, and upward mobility in urban America.
-                        You can find me at monica_chang@college.harvard.edu, check out the original code on my ",
-                               a(href = "https://github.com/monica-chang/Garcia-vs-DHCD", "Github account"), 
-                               "or connect with me on ",
-                               a(href = "https://www.linkedin.com/in/monica-yang-chang", "LinkedIn"), 
-                               ".")
-                     ), 
-                     column(1),
-                     column(6,  
-                            h3("About the Project"),
-                            p("When is justice delayed justice denied? This fall, I worked with the Greater Boston Legal Services Housing Unit to provide support on their class action lawsuit against the Massachusetts Department of Housing and Community Development (DHCD). When a homeless family with disability needs makes a request for accommodation and the request is approved, the DHCD promises to implement the disability accommodation when ",
-                            tags$q("administratively feasible."),
-                            "In my project, I investigate whether the DHCD violates the Americans with Disabilities Act by failing to accommodate the disabilities of homeless individuals within a reasonable timeframe."),
-                            br(),
-                            h3("About the Data"),
-                            p("I am using data provided by the MA Department of Housing and Community Development from 2015-2019. My analysis relies primarily upon 3 datasets:"),
-                              p(strong("ADA Requests: "),
-                              "This dataset contains information about the disability accommodations requested and the reasons for each individual application."),
-                              p(strong("Transfers: "),
-                              "This dataset contains information about external transfers (transfers from one shelter to another) and internal transfers (within one shelter) for every individual in the EA shelter system."),
-                              p(strong("Shelter characteristics: "), 
-                              "This dataset contains information about the characteristics of all the shelters within the EA system.")
-                     )
-              )
+          # I create a tab to provide some more information about me,
+          # the project, and my data sources.
+          
+          tabPanel("About", 
+               fluidRow(style = 'padding:30px;',
+                        column(5,
+                               h3("About Me"),
+                               p("My name is Monica Chang, and I'm currently a sophomore at Harvard College. I plan on concentrating in Social Studies with a secondary in Computer Science. I'm interested in understanding the causes and consequences of societal inequality. I'm especially interested in housing justice, neighborhood effects, and upward mobility in urban America. You can find me at monica_chang@college.harvard.edu, check out the original code on my ",
+                                 a(href = "https://github.com/monica-chang/Garcia-vs-DHCD", "Github account"), 
+                                 "or connect with me on ",
+                                 a(href = "https://www.linkedin.com/in/monica-yang-chang", "LinkedIn"), 
+                                 ".")
+                       ), 
+                       column(1),
+                       column(6,  
+                              h3("About the Project"),
+                              p("When is justice delayed justice denied? This fall, I worked with the Greater Boston Legal Services Housing Unit to provide support on their class action lawsuit against the Massachusetts Department of Housing and Community Development (DHCD). When a homeless family with disability needs makes a request for accommodation and the request is approved, the DHCD promises to implement the disability accommodation when ",
+                              tags$q("administratively feasible."),
+                              "In my project, I investigate whether the DHCD violates the Americans with Disabilities Act by failing to accommodate the disabilities of homeless individuals within a reasonable timeframe."),
+                              br(),
+                              h3("About the Data"),
+                              p("I am using data provided by the MA Department of Housing and Community Development from 2015-2019. My analysis relies primarily upon 3 datasets:"),
+                                p(strong("ADA Requests: "),
+                                "This dataset contains information about the disability accommodations requested and the reasons for each individual application."),
+                                p(strong("Transfers: "),
+                                "This dataset contains information about external transfers (transfers from one shelter to another) and internal transfers (within one shelter) for every individual in the EA shelter system."),
+                                p(strong("Shelter characteristics: "), 
+                                "This dataset contains information about the characteristics of all the shelters within the EA system.")
+                       )
+                )
         )
           
   ))
