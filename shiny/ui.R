@@ -31,7 +31,7 @@ shinyUI(
             h3("The Question"),
             p(strong(em("What percentage of approved disability requests are actually met? How long does it take DHCD to implement these approved accommodations? Is this happening within a reasonable timeframe? Do certain types of accommodations result in longer delays?"))),
             p("The goal of this project is to answer these questions using data on ADA requests (individual applications for disability accommodations), transfers within the shelter system, and characteristics of various shelter locations. This data was provided by the DHCD and ranges from 2015-2019."),
-            p("Here is a plot that shows the percentage of approved ADA requests that are met over time based on certain data assumption (see below for further explanation):"),
+            p("Here is a plot that shows the percentage of approved ADA requests that are met over time based on certain data assumptions (see below for further explanation):"),
             br(),
             
             # I use the sidebarLayout to allows the user to input certain 
@@ -249,9 +249,9 @@ shinyUI(
                fluidRow(style = 'padding:30px;',
                         column(5,
                                h3("About Me"),
-                               p("My name is Monica Chang, and I'm currently a sophomore at Harvard College. I plan on concentrating in Social Studies with a secondary in Computer Science. I'm interested in understanding the causes and consequences of societal inequality. I'm especially interested in housing justice, neighborhood effects, and upward mobility in urban America. You can find me at monica_chang@college.harvard.edu, check out the original code on my ",
-                                 a(href = "https://github.com/monica-chang/Garcia-vs-DHCD", "Github account"), 
-                                 "or connect with me on ",
+                               p("My name is Monica Chang, and I'm currently a sophomore at Harvard College. I plan on concentrating in Social Studies with a secondary in Computer Science. I'm interested in understanding the causes and consequences of societal inequality. I'm especially interested in housing justice, neighborhood effects, and upward mobility in urban America. You can email me at monica_chang@college.harvard.edu, check out my ",
+                                 a(href = "https://github.com/monica-chang", "Github account"), 
+                                 ", or connect with me on ",
                                  a(href = "https://www.linkedin.com/in/monica-yang-chang", "LinkedIn"), 
                                  ".")
                        ), 
@@ -260,7 +260,9 @@ shinyUI(
                               h3("About the Project"),
                               p("When is justice delayed justice denied? This fall, I worked with the Greater Boston Legal Services Housing Unit to provide support on their class action lawsuit against the Massachusetts Department of Housing and Community Development (DHCD). When a homeless family with disability needs makes a request for accommodation and the request is approved, the DHCD promises to implement the disability accommodation when ",
                               tags$q("administratively feasible."),
-                              "In my project, I investigate whether the DHCD violates the Americans with Disabilities Act by failing to accommodate the disabilities of homeless individuals within a reasonable timeframe."),
+                              "In my project, I investigate whether the DHCD violates the Americans with Disabilities Act by failing to accommodate the disabilities of homeless individuals within a reasonable timeframe. You can check out the original code for this project at my ",
+                              a(href = "https://github.com/monica-chang/Garcia-vs-DHCD", "Github repository"),
+                              "."), 
                               br(),
                               h3("About the Data"),
                               p("I am using data provided by the MA Department of Housing and Community Development from 2015-2019. My analysis relies primarily upon 3 datasets:"),
