@@ -5,7 +5,7 @@ approved_adas <- readRDS(file = "data/approved_adas.rds")
 requests <- readRDS(file = "data/requests.rds")
 approved_requests <- readRDS(file = "data/approved_requests.rds") 
 approved_reasons <- readRDS(file = "data/approved_reasons.rds")
-interesting_approved_adas <- readRDS(file = "data/approved_adas.rds") 
+interesting_approved_adas <- readRDS(file = "data/interesting_approved_adas.rds") 
 supplemented_interesting_ada_transfers_t <- readRDS(file = "data/supplemented_interesting_ada_transfers_t.rds") 
 supplemented_interesting_ada_transfers_f <- readRDS(file = "data/supplemented_interesting_ada_transfers_f.rds") 
 
