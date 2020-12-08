@@ -16,6 +16,7 @@ shinyServer(function(input, output) {
     # anonymize the data. 
     
     output$approved_adas <- renderDataTable({
+      
         datatable(approved_adas %>% select(pei, date_received:days_until_accommodation_met), 
                   
                   # I specify certain options to limit the number of rows that

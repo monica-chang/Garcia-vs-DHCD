@@ -270,13 +270,21 @@ all_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50/proj
 # Note: 1847/2108 PEIs only show up once. Some individuals have submitted 
 # multiple approved requests.
 
-approved_adas <- all_adas %>%
+approved_adas_dates_fixed <- all_adas %>%
   filter(approved == "Yes") %>%
-  select(-approved)
+  select(-approved) %>%
+  
+  # I change the date columns to be in date format to make them more 
+  # understandable in my Shiny app.
+  
+  mutate(date_acc_met = as.Date(date_acc_met)) %>%
+  mutate(date_received = as.Date(date_received)) %>%
+  mutate(date_taken = as.Date(date_taken)) %>%
+  mutate(date_decision = as.Date(date_decision)) 
   
 # Save this tibble as a compressed RDS file to be used in the Shiny app.
 
-saveRDS(approved_adas, file = "shiny/data/approved_adas.rds")
+saveRDS(approved_adas_dates_fixed, file = "shiny/data/approved_adas.rds")
 
 ```
 

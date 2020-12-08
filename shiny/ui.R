@@ -136,7 +136,7 @@ shinyUI(
                           h3("Major Caveats"),
                           p("For this model, I use 2015-2019 data only containing requests with unit type accommodations, substitute missing values with transfer data, and assume hotel transfers meet unit type accommodations. As a result, I am only using 606/2108 (28.7%) of all approved ADA requests."),
                           p("Proximity to service providers is by far the most frequently requested accommodation (44.4% of all approved requests). However, because I currently lack information about the zipcode of service providers, I am unable to account for this group in my analysis."),
-                          p("This model has a high RMSE value - meaning that there is a large range of uncertainty about the true median value. Considering our small sample size, incomplete information, and the multitude of factors that go into determining any particular individual's disability accommodation wait time, this is unsurprising.")
+                          p("The root-mean-square error (RMSE) is a frequently used measure of the differences between values predicted by a model and the values observed. This model has a high RMSE value - meaning that there is a large range of uncertainty about the true median value. Considering our small sample size, incomplete information, and the multitude of factors that go into determining any particular individual's disability accommodation wait time, this is unsurprising.")
                    ) 
           )
           
