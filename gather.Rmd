@@ -317,7 +317,7 @@ all_requests <- all_adas %>%
   arrange(desc(total_requests)) %>%
   mutate(percent = total_requests/sum(total_requests) * 100)
 
-# I create a tibble of all requests by pivoting the tibble of all 
+# I create a tibble of approved requests by pivoting the tibble of all 
 # approved ADA requests longer and renaming the accommodations.
 
 approved_requests <- approved_adas_dates_fixed %>%
@@ -424,6 +424,75 @@ approved_reasons %>%
          x = "Percentage of approved requests", 
          y = "Reason type",
          caption = "Source: Department of Housing & Community Development")
+
+```
+
+```{r create time plots for approved requests}
+
+# I write a function that converts NaN to 0.
+
+fix_nan <- function(x){
+    x[is.nan(x)] <- 0
+    x
+}
+
+# I create a tibble that contains the number of requests that were approved, 
+# not approved, and the percentage approved for each accommodation type and year.
+
+breakdown_by_time_acc <- all_adas %>%
+  pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
+               names_to = "accommodation_type", 
+               values_to = "requests") %>%
+  mutate(accommodation_type = recode(accommodation_type, 
+                                     req_placement_unit_close_to_service_providers = "Placement Unit Close to Service Providers",
+                                     req_scattered_site_placement_unit_co_housing_unit = "Scattered Site Placement Unit / Co-housing Unit",
+                                     req_assistance_animal_within_placement_unit = "Assistance Animal within Placement Unit",
+                                     req_first_floor_or_elevator_access = "First Floor or Elevator Access",
+                                     req_non_carpeted_placement_unit = "Non Carpeted Placement Unit",
+                                     req_change_in_ea_regulation_re_housing_plan = "Change in EA Regulation / Re-Housing Plan",
+                                     req_physical_modification_to_placement_unit = "Physical Modification to Placement Unit",
+                                     req_access_to_full_cooking_facilities = "Access to Full Cooking Facilities",
+                                     req_wheelchair_accessible_placement_unit = "Wheelchair Accessible Placement Unit",
+                                     req_assigned_caretaker_temporary_non_ea_household_member = "Assigned Caretaker / Temporary Non-EA Household Member",
+                                     req_additional_bedrooms = "Additional bedrooms",
+                                     req_ac_unit = "AC Unit",
+                                     req_other = "Other")) %>%
+  mutate(year = year(date_received)) %>%
+  group_by(accommodation_type, year, approved) %>%
+  filter(!is.na(year)) %>%
+  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  pivot_wider(names_from = approved, values_from = total_requests) %>%
+  clean_names() %>%
+  mutate(percent = yes/(yes + no) * 100)
+
+# I create a plot showing the change in approval rate for each accommodation
+# type over time.
+
+ggplot(breakdown_by_time_acc, aes(x = year, y = percent, color = accommodation_type)) + 
+  geom_line() +
+  theme_linedraw() +
+  scale_color_discrete(name = "Accommodation Type") +
+  labs(title = "Change in ADA approval rate by accommodation type (2015-2019)",
+       subtitle = "The approval rate for disability accommodation requests significantly decreased from 2016 to 2018.",
+       x = "Year",
+       y = "Percentage of disability accommodation requests approved")
+
+breakdown_by_time <- breakdown_by_time_acc %>%
+  group_by(year) %>%
+  summarize(total_yes = sum(yes), total_no = sum(no), .groups = "drop") %>%
+  mutate(percent = total_yes/(total_yes + total_no) * 100) 
+
+# I create a plot showing the change in approval rate over time.
+
+ggplot(breakdown_by_time, aes(x = year, y = percent)) + 
+  geom_line() +
+  theme_linedraw() +
+  ylim(0, 100) +
+  labs(title = "Change in ADA approval rate (2015-2019)",
+       subtitle = "The approval rate for disability accommodation requests significantly decreased from 2016 to 2018.",
+       x = "Year",
+       y = "Percentage of requests approved")
+  
 
 ```
 
@@ -667,6 +736,11 @@ supplement_date_acc_met <- function(df){
     arrange(desc(unit_type_acc_met), date_referral) %>%
     slice(1) %>%
     
+    mutate(dhcd_data_exists = ifelse(!is.na(date_acc_met), 1, 0)) %>%
+    mutate(days_btwn_dhcd_referral = as.double(difftime(date_acc_met,
+                                                      date_referral,
+                                                      units = "days"))) %>%
+      
     # If a date_acc_met value already exists, keep it. 
     
     mutate(date_acc_met = ifelse(!is.na(date_acc_met), 
@@ -698,12 +772,30 @@ supplement_date_acc_met <- function(df){
                                                              units = "days")))
 }
 
+
 # For requests that ask for either scattered site, first floor, or wheelchair, 
 # I substitute missing date_acc_met values with transfer information and
 # assume that hotel transfers meet all unit type accommodations. 606 rows.
 
 supplemented_interesting_ada_transfers_t <- supplement_date_acc_met(transfers_chars_hotel_t) %>%
-  filter(days_until_accommodation_met >= 0)
+  filter(days_until_accommodation_met >= 0) 
+
+# I filter the dataset to gauge how closely our substitution method matches 
+# what is provided by DHCD. 74/136 are within 1 day of the date_acc_met value
+# provided by the DHCD. 105/136 are within 1 week of the value provided by DHCD.
+
+accuracy_plot <- supplemented_interesting_ada_transfers_t %>%
+  filter(unit_type_acc_met == 1) %>%
+  filter(dhcd_data_exists == 1) %>%
+  ggplot(aes(x = days_btwn_dhcd_referral)) + 
+    geom_histogram(aes(y = after_stat(count/sum(count))),
+                   alpha = 0.5, 
+                   bins = 100) +
+    labs(title = "Distribution of the difference b/w provided DHCD values \n and values inferred based on substitution method",
+           subtitle = "Substitutions are based on the most immediate referral after the request that met \n the unit-type disability accommodation (scattered site, wheelchair, first floor).",
+           x = "Difference b/w provided DHCD values and inferred values (days)",
+           y = "Probability")
+      
 
 saveRDS(supplemented_interesting_ada_transfers_t, 
         file = "shiny/data/supplemented_interesting_ada_transfers_t.rds")
