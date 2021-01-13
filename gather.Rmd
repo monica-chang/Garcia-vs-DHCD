@@ -242,7 +242,8 @@ all_adas <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-v
   # evaluate whether additional bedroom requests were met. For now, we 
   # exclude them from our analysis.
   
-  mutate(interesting = ifelse(req_scattered_site_placement_unit_co_housing_unit == 1 |
+  mutate(interesting = ifelse(req_placement_unit_close_to_service_providers == 1 |
+                              req_scattered_site_placement_unit_co_housing_unit == 1 |
                               req_first_floor_or_elevator_access == 1 |
                               req_wheelchair_accessible_placement_unit == 1, 1, 0)) %>%
   
@@ -270,6 +271,18 @@ all_adas <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-v
 # Note: 1847/2108 PEIs only show up once. Some individuals have submitted 
 # multiple approved requests.
 
+boston_zips = c("02101", "02108", "02109", "02110", "02111", "02112", "02113", 
+                "02114", "02115", "02116", "02117", "02118", "02119", "02120", 
+                "02121", "02122", "02123", "02124", "02125", "02126", "02127", 
+                "02128", "02129", "02130", "02131", "02132", "02133", "02134", 
+                "02135", "02136", "02137", "02141", "02149", "02150", "02151",
+                "02152", "02163", "02171", "02196", "02199", "02201", "02203", 
+                "02204", "02205", "02206", "02210", "02211", "02212", "02215", 
+                "02217", "02222", "02228", "02241", "02266", "02283", "02284", 
+                "02293", "02297", "02298", "02445", "02467")
+
+random_zips <- rep_sample_n(as.tibble(boston_zips), 1, replace = TRUE, reps = 2108)
+
 approved_adas_dates_fixed <- all_adas %>%
   filter(approved == "Yes") %>%
   select(-approved) %>%
@@ -280,7 +293,11 @@ approved_adas_dates_fixed <- all_adas %>%
   mutate(date_acc_met = as.Date(date_acc_met)) %>%
   mutate(date_received = as.Date(date_received)) %>%
   mutate(date_taken = as.Date(date_taken)) %>%
-  mutate(date_decision = as.Date(date_decision)) 
+  mutate(date_decision = as.Date(date_decision)) %>%
+  mutate(zipcode_of_provider = random_zips$value,
+         distance_from_provider_required = 20,
+         type_of_provider = NA,
+         misc_notes = NA)
   
 # Save this tibble as a compressed RDS file to be used in the Shiny app.
 
@@ -604,7 +621,7 @@ ada_transfers <- left_join(approved_adas_dates_fixed, transfers, by = "pei") %>%
   
   # I am only able to analyze whether requests were met for scattered site,
   # first floor, and wheelchair accessible accommodations.
-  # 2797/6502 rows remain.
+  # 5072/6502 rows remain.
   
   filter(interesting == 1) %>% 
   
@@ -629,7 +646,7 @@ ada_transfers <- left_join(approved_adas_dates_fixed, transfers, by = "pei") %>%
 
   # I filter out cases where the date of referral is before the date the 
   # ADA application was received - because those referrals are not relevant to
-  # address the disability request. 1432/2797 rows remain.
+  # address the disability request. 2882/5072 rows remain.
   
   filter(date_received <= date_referral | is.na(date_referral) | is.na(date_received)) %>%
   select(pei:date_received, date_decision:date_referral)
@@ -678,25 +695,28 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
     # provider accepts the referral, the provider places the family in the new 
     # shelter unit. This appears as an entity_to transfer.
     
-    # Since program_to transfer is followed by a more specific entity_to transfer, 
-    # I can filter program_to transfers out.
+    # Since a program_to transfer is always followed by a more specific 
+    # entity_to transfer, I can filter program_to transfers out.
     
     filter(transfer_type_specific != "program_to") %>%
+    rename(zipcode_of_transfer = zip_code) %>%
     select(pei:date_taken, date_referral, date_acc_met, 
-           days_until_accommodation_met, interesting, 
+           days_until_accommodation_met, interesting, shelter_from, hotel_from,
            req_placement_unit_close_to_service_providers:transfer_location, 
-           unit_type_acc_met)
+           zipcode_of_transfer, unit_type_acc_met)
 }
 
+# TODO: Look at which shelters are associated with the longest delays.
+
 # Tibble generated when we make the assumption that a hotel transfer meets all
-# unit type accommodations.
+# unit type accommodations. 2510 observations.
 
 transfers_chars_hotel_t <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = TRUE)
 
 saveRDS(transfers_chars_hotel_t, file = "shiny/data/transfers_chars_hotel_t.rds")
 
 # Tibble generated when we make the assumption that a hotel transfer meets no
-# unit type accommodations.
+# unit type accommodations. 2510 observations.
 
 transfers_chars_hotel_f <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = FALSE)
 
@@ -772,19 +792,22 @@ supplement_date_acc_met <- function(df){
                                                              units = "days")))
 }
 
-
-# For requests that ask for either scattered site, first floor, or wheelchair, 
-# I substitute missing date_acc_met values with transfer information and
-# assume that hotel transfers meet all unit type accommodations. 606 rows.
+# For requests that ask for either service provider, scattered site, 
+# first floor, or wheelchair, I substitute missing date_acc_met values with 
+# transfer information and assume that hotel transfers meet all unit type 
+# accommodations. 1204 rows.
 
 supplemented_interesting_ada_transfers_t <- supplement_date_acc_met(transfers_chars_hotel_t) %>%
   filter(days_until_accommodation_met >= 0) 
+
+saveRDS(supplemented_interesting_ada_transfers_t, 
+        file = "shiny/data/supplemented_interesting_ada_transfers_t.rds")
 
 # I filter the dataset to gauge how closely our substitution method matches 
 # what is provided by DHCD. 74/136 are within 1 day of the date_acc_met value
 # provided by the DHCD. 105/136 are within 1 week of the value provided by DHCD.
 
-accuracy_plot <- supplemented_interesting_ada_transfers_t %>%
+supplemented_interesting_ada_transfers_t %>%
   filter(unit_type_acc_met == 1) %>%
   filter(dhcd_data_exists == 1) %>%
   ggplot(aes(x = days_btwn_dhcd_referral)) + 
@@ -795,14 +818,11 @@ accuracy_plot <- supplemented_interesting_ada_transfers_t %>%
            subtitle = "Substitutions are based on the most immediate referral after the request that met \n the unit-type disability accommodation (scattered site, wheelchair, first floor).",
            x = "Difference b/w provided DHCD values and inferred values (days)",
            y = "Probability")
-      
 
-saveRDS(supplemented_interesting_ada_transfers_t, 
-        file = "shiny/data/supplemented_interesting_ada_transfers_t.rds")
-
-# For requests that ask for either scattered site, first floor, or wheelchair, 
-# I substitute missing date_acc_met values with transfer information and
-# assume that hotel transfers don't meet all unit type accommodations. 606 rows.
+# For requests that ask for either service provider, scattered site, 
+# first floor, or wheelchair, I substitute missing date_acc_met values with 
+# transfer information and assume that hotel transfers don't meet all unit type 
+# accommodations. 1204 rows.
 
 supplemented_interesting_ada_transfers_f <- supplement_date_acc_met(transfers_chars_hotel_f) %>%
   filter(days_until_accommodation_met >= 0)
