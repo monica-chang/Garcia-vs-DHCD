@@ -168,7 +168,7 @@ ada_request_2020 <- clean_ada_request(ada_request_2020)
 
 ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
 write_csv(ada_request_2018_2020, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_unprocessed.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_unprocessed.csv")
 
 
 ```
@@ -199,7 +199,7 @@ col_types <- cols(
 # I pivot my processed data so that each row represents one request 
 # i.e. each row is uniquely identified by PEI + date_received.
 
-all_adas <- read_csv(file = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_processed.csv", col_types = col_types) %>%
+all_adas <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_processed.csv", col_types = col_types) %>%
   mutate(approved = ifelse(approved != "Yes" | is.na(approved), "No", approved)) %>%
   mutate(dummy = 1) %>%
   
@@ -320,7 +320,7 @@ all_requests <- all_adas %>%
 # I create a tibble of all requests by pivoting the tibble of all 
 # approved ADA requests longer and renaming the accommodations.
 
-approved_requests <- approved_adas %>%
+approved_requests <- approved_adas_dates_fixed %>%
   pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
                names_to = "accommodation_type", 
                values_to = "requests") %>%
@@ -395,7 +395,7 @@ approved_requests %>%
 # I create a tibble of reasons for approved ADA requests by pivoting the 
 # tibble of all approved ADA requests longer and renaming the reasons.
 
-approved_reasons <- approved_adas %>%
+approved_reasons <- approved_adas_dates_fixed %>%
   pivot_longer(cols = reason_physical_health:reason_other, 
                names_to = "reason_type", 
                values_to = "requests") %>%
@@ -527,7 +527,7 @@ transfers <- bind_rows(external_transfers, internal_transfers) %>%
 # I use a left_join because I want to keep all of the rows from my approved_adas
 # tibble - even if there is no corresponding internal or external transfer. 
 
-ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>% 
+ada_transfers <- left_join(approved_adas_dates_fixed, transfers, by = "pei") %>% 
   
   # I eliminate duplicate rows. 6502/7401 rows remain.
   
@@ -553,13 +553,11 @@ ada_transfers <- left_join(approved_adas, transfers, by = "pei") %>%
   # the mean of the difference between date_received and date_decision.
   
   mutate(date_received = ifelse(is.na(date_received), 
-                                date_decision - days(mean_days_btwn_decision_received),
+                                date_decision - mean_days_btwn_decision_received,
                                 date_received)) %>%
   
-  # I use strptime to convert my POSIXct object to an understandable datetime.
-  
-  mutate(date_received = strptime("1970-01-01 00:00:00", "%Y-%m-%d %H:%M:%S") + date_received) %>%
-  
+  mutate(date_received = as.Date(as.POSIXct(date_received*24*60*60, origin = "1970-01-01", tz="UTC"))) %>%
+
   # I filter out cases where the date of referral is before the date the 
   # ADA application was received - because those referrals are not relevant to
   # address the disability request. 1432/2797 rows remain.
@@ -680,17 +678,17 @@ supplement_date_acc_met <- function(df){
                                  # censorship date.
                                  
                                  ifelse(unit_type_acc_met == 1, 
-                                        date_referral, 
-                                        date_received + days(365)))) %>%
+                                        as.Date(date_referral), 
+                                        as.Date(date_received + 365)))) %>% 
     
     # I use strptime to convert my POSIXct object to an understandable datetime.
     
-    mutate(date_acc_met = strptime("1970-01-01", "%Y-%m-%d") + date_acc_met) %>%
+    mutate(date_acc_met = as.Date(as.POSIXct(date_acc_met*24*60*60, origin = "1970-01-01", tz="UTC"))) %>% 
     
     # I use format to make sure my dates follow the same conventions.
     
-    mutate(date_received = format(date_received, format = '%Y-%m-%d')) %>%
-    mutate(date_acc_met = format(date_acc_met, format = '%Y-%m-%d')) %>%
+    mutate(date_received = as.Date(date_received)) %>%
+    mutate(date_acc_met = as.Date(date_acc_met)) %>% 
     
     # I create a variable calculating the days it takes for each unique ADA
     # request to be met - based on the date_received and data_acc_met columns.
@@ -762,7 +760,7 @@ create_kaplan_meier <- function(df){
 # Note: 52 requests have a negative # of days_until_accommodation_met which 
 # doesn't make sense. This analysis excludes these requests. 
 
-approved_adas_no_neg <- approved_adas %>%
+approved_adas_no_neg <- approved_adas_dates_fixed %>%
   filter(days_until_accommodation_met >= 0 | is.na(days_until_accommodation_met))
 
 create_kaplan_meier(approved_adas_no_neg)
@@ -865,7 +863,7 @@ fit_obj_tbl %>%
 
 # Generate a spreadsheet of requests that include a service provider acc.
 
-service_provider_requests <- approved_adas %>%
+service_provider_requests <- approved_adas_dates_fixed %>%
   filter(req_placement_unit_close_to_service_providers == 1) %>%
   select(pei:how_acc_met, reason_physical_health:reason_other) %>%
   arrange(desc(date_received)) %>%
@@ -875,15 +873,15 @@ service_provider_requests <- approved_adas %>%
          misc_notes = NA)
 
 write_csv(service_provider_requests, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/service_provider_requests.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/service_provider_requests.csv")
 
 # Generate a spreadsheet of approved ADAs who have "NA" for date_received.
 
-approved_adas_na_date <- approved_adas %>%
+approved_adas_na_date <- approved_adas_dates_fixed %>%
   filter(is.na(date_received))
 
 write_csv(approved_adas_na_date, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/approved_adas_na_date.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/approved_adas_na_date.csv")
 
 # Generate a spreadsheet of people who underwent a ton of transfers (10+). 
 # that may require follow-up for Laura.
@@ -895,13 +893,13 @@ ada_many_transfers <- ada_transfers %>%
   filter(num_transfers > 5)
 
 write_csv(ada_many_transfers, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/approved_adas_many_tranfers.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/approved_adas_many_tranfers.csv")
 
 # Generate a spreadsheet of people who have a ADA date_acc_met column filled out
 # and require a transfer (service providers, scattered site, first floor, 
 # wheelchair, bedrooms).
 
-ada_date_acc_met_filled <- approved_adas %>%
+ada_date_acc_met_filled <- approved_adas_dates_fixed %>%
   filter(!is.na(date_acc_met)) %>%
   filter(req_placement_unit_close_to_service_providers == 1 |
          req_scattered_site_placement_unit_co_housing_unit == 1 |
@@ -916,10 +914,10 @@ ada_date_acc_met_filled_sample <- ada_date_acc_met_filled %>%
   select(pei, name)
 
 write_csv(ada_date_acc_met_filled, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled.csv")
 
 write_csv(ada_date_acc_met_filled_sample, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_sample.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_sample.csv")
 
 # I repeat the above except also merge in the transfer data for these individuals.
 
@@ -936,10 +934,10 @@ ada_date_acc_met_filled_sample_t <-
   arrange(desc(date_received)) 
 
 write_csv(ada_date_acc_met_filled_t, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_t.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_t.csv")
 
 write_csv(ada_date_acc_met_filled_sample_t, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_sample_t.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_date_acc_met_filled_sample_t.csv")
 
 # Generate a spreadsheet of date_approved, date of internal & external transfers
 # for relevant PEIs for Dan.
@@ -955,7 +953,7 @@ ada_no_transfers_supplemented <-
   distinct(transfer_location, .keep_all = TRUE)
 
 write_csv(ada_no_transfers_supplemented, 
-          path = "/Users/monicachang/Documents*/fall_2020/gov_50/project/Garcia-vs-DHCD/processed_data/ada_no_transfers_supplemented.csv")
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_no_transfers_supplemented.csv")
 
 ```
 
