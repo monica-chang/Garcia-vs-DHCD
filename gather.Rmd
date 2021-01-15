@@ -18,6 +18,8 @@ library(janitor)
 library(rsample)
 library(rstanarm)
 library(tidymodels)
+library(ggmap)
+library(leaflet)
 ```
 
 
@@ -682,7 +684,8 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
     # I am able to account for non_hotel placement and entity_to transfers
     # using my shelter characteristics dataset. Because I do not have information
     # on the characteristics of hotels, I will run a scenario where a hotel meets 
-    # all unit type accommodations and a scenario where a hotel doesn't meet any.
+    # all unit type accommodations other than proximity to service providers 
+    # and a scenario where a hotel doesn't meet any.
   
     mutate(unit_type_acc_met = ifelse(hotel == TRUE & transfer_type_specific == "hotel_placement", 1, 
                                ifelse(hotel == TRUE & transfer_type_specific != "hotel_placement", unit_type_acc_met,
@@ -706,7 +709,7 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
            zipcode_of_transfer, unit_type_acc_met)
 }
 
-# TODO: Look at which shelters are associated with the longest delays.
+# FUTURE TODO: Look at which shelters are associated with the longest delays.
 
 # Tibble generated when we make the assumption that a hotel transfer meets all
 # unit type accommodations. 2510 observations.
@@ -721,6 +724,38 @@ saveRDS(transfers_chars_hotel_t, file = "shiny/data/transfers_chars_hotel_t.rds"
 transfers_chars_hotel_f <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = FALSE)
 
 saveRDS(transfers_chars_hotel_f, file = "shiny/data/transfers_chars_hotel_f.rds")
+```
+
+```{r calculating distance/time between zipcodes}
+
+transfer_locations_without_zips <- transfers_chars_hotel_t %>%
+  filter(is.na(zipcode_of_transfer)) %>% 
+  select(transfer_type, transfer_type_specific, transfer_location) %>%
+  distinct() %>%
+  arrange(transfer_type_specific, transfer_location)
+
+
+
+btwn_zips <- transfers_chars_hotel_t %>%
+  select(pei, zipcode_of_transfer, zipcode_of_provider) %>%
+  mutate(zipcode_of_transfer = str_c(zipcode_of_transfer, ", USA")) %>%
+  mutate(zipcode_of_provider = str_c(zipcode_of_provider, ", USA")) %>%
+  replace_na(list(zipcode_of_transfer = "98607, USA", zipcode_of_provider = "98607, USA")) %>%
+  head(100) %>%
+  mutate(dist_btwn_zips = mapdist(zipcode_of_transfer, zipcode_of_provider) %>% select(miles)) %>%
+  mutate(time_btwn_zips = mapdist(zipcode_of_transfer, zipcode_of_provider) %>% select(minutes))
+  
+```
+
+
+```{r merge hotel zips}
+
+hotel_locs <- transfers_chars_hotel_t %>% 
+  filter(transfer_type_specific == "hotel_placement") %>% 
+  select(transfer_location) %>% 
+  distinct() %>%
+  arrange(transfer_location)
+
 ```
 
 ```{r clean ada transfers}
