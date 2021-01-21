@@ -133,23 +133,6 @@ internal,entity_to,Way Finders SS: 742 State Street 04
 internal,entity_to,Way Finders SS: 744 State Street 1L
 internal,entity_to,Way Finders SS: 748 State Street 4L
 internal,entity_to,Way Finders SS: 878 Worthington Street 1L
-external,hotel_placement,Brighton Inn
-external,hotel_placement,Brockton Roadway Inn
-external,hotel_placement,Brockton Super 8 Motel
-external,hotel_placement,Colonial Traveler Motor Court
-external,hotel_placement,Danvers Extended Stay
-external,hotel_placement,Days Hotel Brighton
-external,hotel_placement,Holyoke Days Inn
-external,hotel_placement,Leominster Days Inn
-external,hotel_placement,Somerset Super 8
-external,hotel_placement,Springfield Howard Johnson
-external,hotel_placement,Stateline Motor Inn
-external,hotel_placement,Swansea Motor Inn
-external,hotel_placement,Town Line Inn
-external,hotel_placement,Valley Opportunity Inn
-external,hotel_placement,Waltham Home Suites
-external,hotel_placement,Westgate
-external,hotel_placement,Weymouth Super 8
 external,non_hotel_placement,ABCD SS: 02 Bismark  08
 external,non_hotel_placement,ABCD SS: 06 Bismark St Unit 15
 external,non_hotel_placement,ABCD SS: 795 Cummings Unit 15
