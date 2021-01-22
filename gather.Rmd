@@ -456,31 +456,18 @@ fix_nan <- function(x){
 }
 
 # I create a tibble that contains the number of requests that were approved, 
-# not approved, and the percentage approved for each accommodation type and year.
+# not approved, and the percentage approved for each accommodation type and month.
 
 breakdown_by_time_acc <- all_adas %>%
-  pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
-               names_to = "accommodation_type", 
-               values_to = "requests") %>%
-  mutate(accommodation_type = recode(accommodation_type, 
-                                     req_placement_unit_close_to_service_providers = "Placement Unit Close to Service Providers",
-                                     req_scattered_site_placement_unit_co_housing_unit = "Scattered Site Placement Unit / Co-housing Unit",
-                                     req_assistance_animal_within_placement_unit = "Assistance Animal within Placement Unit",
-                                     req_first_floor_or_elevator_access = "First Floor or Elevator Access",
-                                     req_non_carpeted_placement_unit = "Non Carpeted Placement Unit",
-                                     req_change_in_ea_regulation_re_housing_plan = "Change in EA Regulation / Re-Housing Plan",
-                                     req_physical_modification_to_placement_unit = "Physical Modification to Placement Unit",
-                                     req_access_to_full_cooking_facilities = "Access to Full Cooking Facilities",
-                                     req_wheelchair_accessible_placement_unit = "Wheelchair Accessible Placement Unit",
-                                     req_assigned_caretaker_temporary_non_ea_household_member = "Assigned Caretaker / Temporary Non-EA Household Member",
-                                     req_additional_bedrooms = "Additional bedrooms",
-                                     req_ac_unit = "AC Unit",
-                                     req_other = "Other")) %>%
   mutate(year = year(date_received)) %>%
   mutate(month = month(date_received)) %>% 
-  filter(accommodation_type == "Scattered Site Placement Unit / Co-housing Unit") %>%
+  
+  # I can add this filter if I want to view these plots by accommodation type.
+  
+  # filter(req_placement_unit_close_to_service_providers == 1) %>%
+  
   group_by(approved, year, month) %>%
-  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  summarize(total_requests = n(), .groups = "drop") %>%
   pivot_wider(names_from = approved, values_from = total_requests) %>%
   mutate(date = make_date(year, month)) %>%
   clean_names() %>%
@@ -488,74 +475,38 @@ breakdown_by_time_acc <- all_adas %>%
   mutate(percent = yes/(yes + no) * 100) %>%
   filter(!is.na(total))
 
-# I create a plot showing the change in approval rate for each accommodation
-# type over time.
+# I create a plot showing the change in approval rate over time.
 
 ggplot(breakdown_by_time_acc, aes(x = date, y = percent)) + 
   geom_point() +
   geom_line() +
   theme_linedraw() +
   scale_color_discrete(name = "Accommodation Type") +
-  labs(title = "Change in ADA approval rate for scattered site placement (2015-2019)",
+  labs(title = "Change in ADA approval rate (2015-2019)",
        x = "Month",
        y = "Percentage of requests approved")
+
+# I create a plot showing the change in total requests over time.
 
 ggplot(breakdown_by_time_acc, aes(x = date, y = total)) + 
   geom_point() +
   geom_line() +
   theme_linedraw() +
   scale_color_discrete(name = "Accommodation Type") +
-  labs(title = "Change in total number of requests for scattered site placement (2015-2019)",
+  labs(title = "Change in total number of requests (2015-2019)",
        x = "Month",
        y = "Total number of requests")
+
+# I create a plot showing the change in approved requests over time.
 
 ggplot(breakdown_by_time_acc, aes(x = date, y = yes)) + 
   geom_point() +
   geom_line() +
   theme_linedraw() +
   scale_color_discrete(name = "Accommodation Type") +
-  labs(title = "Change in number of approved requests for scattered site placement (2015-2019)",
+  labs(title = "Change in number of approved requests (2015-2019)",
        x = "Month",
        y = "Number of approved requests")
-
-breakdown_by_time <- breakdown_by_time_acc %>%
-  group_by(date) %>%
-  summarize(total_yes = sum(yes), total_no = sum(no), .groups = "drop") %>%
-  mutate(total = total_yes + total_no) %>%
-  mutate(percent = total_yes/(total_yes + total_no) * 100) 
-
-# I create a plot showing the change in approval rate over time.
-
-ggplot(breakdown_by_time, aes(x = date, y = percent)) + 
-  geom_point() +
-  geom_line() +
-  theme_linedraw() +
-  labs(title = "Change in ADA approval rate (2015-2019)",
-       subtitle = "The approval rate for ADA requests significantly decreased after 2017.",
-       x = "Month",
-       y = "Percentage of requests approved")
-
-# I create a plot showing the change in total number of ADA requests over time.
-
-ggplot(breakdown_by_time, aes(x = date, y = total)) + 
-  geom_point() +
-  geom_line() +
-  theme_linedraw() +
-  labs(title = "Change in total number of ADA requests (2015-2019)",
-       subtitle = "The number of total ADA requests increased after 2017.",
-       x = "Month",
-       y = "Total number of ADA requests")
-
-# I create a plot showing the change in total number of approved ADA requests over time.
-  
-ggplot(breakdown_by_time, aes(x = date, y = total_yes)) + 
-  geom_point() +
-  geom_line() +
-  theme_linedraw() +
-  labs(title = "Change in number of approved ADA requests (2015-2019)",
-       subtitle = "The number of approved ADA requests has stayed relatively constant over time, \n despite increased number of applicants.",
-       x = "Month",
-       y = "Number of approved ADA requests")
 
 ```
 
@@ -1160,3 +1111,131 @@ write_csv(ada_no_transfers_supplemented,
 
 ```
 
+```{r interactive process analysis}
+
+# I read in Erin's spreadsheet and select relevant columns to know when an 
+# individual's application was received, whether they were engaged in an 
+# interactive process, whether they received some form of response, and 
+# whether they were accommodated.
+
+erin_data <- "raw_data/erin_data.xls"
+excel_sheets(path = erin_data)
+active_portfolio <- read_excel(path = erin_data, sheet = "Complete Protfolio-ACTIVE") %>%
+  clean_names() %>%
+  mutate(name = paste(last_name, first_name, sep = ", ")) %>%
+  select(name, date_received, date_ip_letter_sent, date_of_follow_up_contact, 
+         date_additional_paperwork_received, date_of_final_decision, 
+         partial_accommodation_add_1, full_accommodation_add_1) 
+
+# I filter down the data to only include interactive process requests. 
+
+ip <- active_portfolio %>%
+  filter(!is.na(date_ip_letter_sent)) %>%
+  mutate(year = year(date_received)) %>%
+  mutate(month = month(date_received)) %>% 
+  group_by(year, month) %>%
+  summarize(total = n(), .groups = "drop") %>%
+  mutate(date = make_date(year, month))
+
+ggplot(ip, aes(x = date, y = total)) + 
+  geom_point() +
+  geom_line() +
+  theme_linedraw() +
+  labs(title = "Change in number of interactive process requests",
+       x = "Month",
+       y = "Number of interactive process requests")
+
+# I filter down the data to only include interactive process requests 
+# that received some form of response.
+
+ip_respond <- active_portfolio %>%
+  filter(!is.na(date_ip_letter_sent)) %>%
+  filter(!is.na(date_of_follow_up_contact) | 
+         !is.na(date_additional_paperwork_received) |
+         !is.na(date_of_final_decision)) %>%
+  mutate(year = year(date_received)) %>%
+  mutate(month = month(date_received)) %>% 
+  group_by(year, month) %>%
+  summarize(responded = n(), .groups = "drop") %>%
+  mutate(date = make_date(year, month)) 
+
+ggplot(ip_respond, aes(x = date, y = responded)) + 
+  geom_point() +
+  geom_line() +
+  theme_linedraw() +
+  labs(title = "Change in number of interactive process requests that had either \n a follow-up contact, additional paperwork received, or a final decision made",
+       x = "Month",
+       y = "Number of interactive process requests")
+
+# I filter down the data to only include interactive process requests 
+# that received some form of response AND some form of accommodation.
+
+ip_respond_acc <- active_portfolio %>%
+  filter(!is.na(date_ip_letter_sent)) %>%
+  filter(!is.na(date_of_follow_up_contact) | 
+         !is.na(date_additional_paperwork_received) |
+         !is.na(date_of_final_decision)) %>%
+  filter(!is.na(partial_accommodation_add_1) | 
+         !is.na(full_accommodation_add_1)) %>%
+  mutate(year = year(date_received)) %>%
+  mutate(month = month(date_received)) %>% 
+  group_by(year, month) %>%
+  summarize(accommodated = n(), .groups = "drop") %>%
+  mutate(date = make_date(year, month)) 
+
+ggplot(ip_respond_acc, aes(x = date, y = accommodated)) + 
+  geom_point() +
+  geom_line() +
+  theme_linedraw() +
+  labs(title = "Change in number of interactive process requests that receive \nfollow-up and accommodation",
+       subtitle = "A response can be either a follow-up contact, additional paperwork received, or final decision made.\nAn accommodation can be either partial or full accommodation.",
+       x = "Month",
+       y = "Number of interactive process requests")
+
+# I create a tibble showing the percentage of IP requests that received 
+# some form of response.
+
+respond_rate <- left_join(ip, ip_respond, by = c("year", "month", "date")) %>%
+  mutate(percent = responded/total * 100) %>%
+  select(date, responded, total, percent)
+
+ggplot(respond_rate, aes(x = date, y = percent)) + 
+  geom_point() +
+  geom_line() +
+  theme_linedraw() +
+  labs(title = "Change in percentage of interactive process requests that received a response",
+       subtitle = "A response can be either a follow-up contact, additional paperwork received, or final decision made.",
+       x = "Month",
+       y = "% of IP requests that received a response")
+
+# I create a tibble showing the percentage of IP requests that received 
+# some form of response AND some form of accommodation.
+
+accommodation_rate <- left_join(ip, ip_respond_acc, by = c("year", "month", "date")) %>%
+  mutate(percent = accommodated/total * 100) %>%
+  select(date, accommodated, total, percent)
+
+ggplot(accommodation_rate, aes(x = date, y = percent)) + 
+  geom_point() +
+  geom_line() +
+  theme_linedraw() +
+  labs(title = "Change in percentage of interactive process requests that received accommodation",
+       subtitle = "An accommodation can be either partial or full accommodation.",
+       x = "Month",
+       y = "% of IP requests that received accommodation")
+
+accommodation_rate_2 <- left_join(ip_respond, ip_respond_acc, by = c("year", "month", "date")) %>%
+  mutate(percent = accommodated/responded * 100) %>%
+  select(date, accommodated, responded, percent)
+
+ggplot(accommodation_rate_2, aes(x = date, y = percent)) + 
+  geom_point() +
+  geom_line() +
+  theme_linedraw() +
+  labs(title = "Change in percentage of interactive process requests w/ response \nthat received accommodation",
+       subtitle = "An accommodation can be either partial or full accommodation.",
+       x = "Month",
+       y = "% of IP requests w/ response that received accommodation")
+
+
+```
