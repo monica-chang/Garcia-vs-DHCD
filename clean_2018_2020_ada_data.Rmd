@@ -1,0 +1,174 @@
+---
+title: "Cleaning 2018 & 2020 ADA Request Data"
+author: "Monica Chang"
+date: "3/26/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+```
+
+```{r clean 2018 and 2020 data}
+
+# I filter the 2018 and 2020 data so that they have consistent columns.
+
+ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
+  
+  # Clean column names, drop unnecessary columns and correct one column name.
+  
+  clean_names() %>%
+  select(-c("touch_point_name_111")) %>%
+  rename(if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223 = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_w,
+         name = ada_request_data_name) 
+  
+
+ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
+  
+  # Clean column names, drop unnecessary columns and correct column order.
+  
+  clean_names() %>%
+  
+  # The 2020 data does not ask about hotels/motels or other accommodations, but
+  # we add them here for consistency with 2018 data.
+  
+  mutate(if_the_ada_request_occurred_in_the_hotel_motel_please_indicate = NA) %>%
+  mutate(if_other_ada_accomodation_requested_please_describe_3226 = NA) %>%
+  select(participant_enterprise_identifier, 
+         name,
+         date_taken_111, 
+         where_did_the_ada_request_occur_3211,
+         if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223, 
+         if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
+         date_that_the_central_ada_coordinator_received_ada_request_3212,
+         ada_accommodation_request_3213,
+         if_other_ada_accomodation_requested_please_describe_3226,
+         reason_for_the_ada_request_3214,
+         if_other_reason_please_describe_3227,
+         date_the_decision_made_3215,
+         was_the_ada_request_approved_3216,
+         if_partial_please_explain_3217,
+         if_closed_please_explain_3219,
+         was_the_accommodations_met_3218,
+         how_was_the_accommodation_met_3221,
+         date_the_accommodation_met_3220) 
+
+# Takes in a ADA request tibble that has already been filtered to the 
+# correct columns. This function renames columns, eliminates 
+# hyphens from the pei, eliminates duplicate rows, and pivots the data 
+# so that each row represents a unique accommodation request made (i.e.
+# if someone requested 3 different accommodations on one day, they would
+# appear as 3 different rows). This will allow me to manually go through and
+# account for partial approvals.
+
+clean_ada_request <- function(x) {
+  x <- x %>%
+    
+    # Rename columns.
+    
+    rename(pei = participant_enterprise_identifier,
+           date_received = date_that_the_central_ada_coordinator_received_ada_request_3212,
+           date_decision = date_the_decision_made_3215,
+           date_taken = date_taken_111,
+           date_acc_met = date_the_accommodation_met_3220,
+           req_where = where_did_the_ada_request_occur_3211,
+           shelter_from = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223,
+           hotel_from = if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
+           acc_type = ada_accommodation_request_3213,
+           other_acc_type = if_other_ada_accomodation_requested_please_describe_3226,
+           request_reason = reason_for_the_ada_request_3214,
+           other_request_reason = if_other_reason_please_describe_3227,
+           approved = was_the_ada_request_approved_3216,
+           partial = if_partial_please_explain_3217,
+           closed = if_closed_please_explain_3219,
+           acc_met = was_the_accommodations_met_3218,
+           how_acc_met = how_was_the_accommodation_met_3221) %>%
+    
+    # Eliminate hyphens from the PEI identification number.
+    
+    mutate(pei = gsub("-", "", pei)) %>%
+    
+    # Eliminate duplicate rows.
+    
+    distinct() %>%
+    
+    # No more than 4 accommodations are provided to any one row. So, I divide the
+    # request column into five columns, based on the "\\|" divider. Missing 
+    # values are filled on the right.
+    
+    separate(acc_type, into = c("a", "b", "c", "d", "e"), sep = "\\|", fill = 'right') %>%
+    
+    # I want to collapse these four columns into "tidy" format, where each row
+    # represents a unique request made. So, I pivot the data to make it longer.
+    
+    pivot_longer(cols = c(a, b, c, d, e), 
+                 names_to = "letter_id",  
+                 values_to = "request_type") %>%
+    
+    # If any of the columns c(a, b, c, d, e) were empty before I pivoted longer, 
+    # an "NA" value will appear. Additionally, I notice that some cells seem to
+    # just contain an empty space (likely due to data entry errors). So, I drop
+    # the NAs and remove the cells that are just empty spaces.
+    
+    drop_na(request_type) %>%
+    filter(request_type != "") %>%
+    
+    # I rename certain accommodation request types to ensure that 2018 and
+    # 2020 data follow similar conventions.
+    
+    mutate(request_type = recode(request_type, 
+                                 `Comfort Animal within Placement Unit` = "Assistance Animal within Placement Unit",
+                                 `Scattered Site Placement Unit` = "Scattered Site Placement Unit / Co-housing Unit",
+                                 `Placement Unit Close to Service Providers (when a participant is placed out of area away from their current medical providers)` = "Placement Unit Close to Service Providers",
+                                 `Physical Modification to Placement Unit (visual cues for hearing impaired, grab bars in shower, etc.)` = "Physical Modification to Placement Unit")) %>%
+  
+    # I rename certain accommodation request reasons to ensure that 2018 and
+    # 2020 data follow similar conventions.
+    
+    mutate_if(is.character, str_replace_all, pattern = "Developmental Disability / Behavioral", replacement = "Developmental Disability") %>%
+    mutate_if(is.character, str_replace_all, pattern = "Developmental Disability", replacement = "Developmental Disability / Behavioral") %>%
+    mutate_if(is.character, str_replace_all, pattern = "Mental / Emotional Health", replacement = "Mental Health") %>%
+    
+    # I separate request_reason into multiple columns to account for individuals
+    # that requested accommodations for more than one reason.
+    
+    separate(request_reason, into = c("reason_1", "reason_2", "reason_3", "reason_4"), sep = "\\|", fill = 'right') %>%
+    
+    # I create a variable calculating the days it takes for each unique ADA
+    # request to be met - based on the date_received and data_acc_met columns.
+
+    mutate(days_until_accommodation_met = as.double(difftime(lubridate::ymd(date_acc_met),
+                                                             lubridate::ymd(date_received),
+                                                             units = "days"))) %>%
+    
+    # Re-order columns and drop unnecessary columns.
+    
+    select(pei, name, date_received, date_decision, date_taken, date_acc_met, 
+           days_until_accommodation_met, request_type, reason_1:reason_4, 
+           req_where:how_acc_met) 
+
+  }
+
+ada_request_2018 <- clean_ada_request(ada_request_2018)
+ada_request_2020 <- clean_ada_request(ada_request_2020)
+
+# Combine the 2018 and 2020 touchpoint data.
+
+ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
+write_csv(ada_request_2018_2020, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_unprocessed.csv")
+
+
+```

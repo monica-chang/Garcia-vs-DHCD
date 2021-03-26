@@ -20,160 +20,9 @@ library(rstanarm)
 library(tidymodels)
 library(ggmap)
 library(leaflet)
+library(tidyquant)
 ```
 
-
-```{r clean 2018 and 2020 data}
-
-# I filter the 2018 and 2020 data so that they have consistent columns.
-
-ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
-  
-  # Clean column names, drop unnecessary columns and correct one column name.
-  
-  clean_names() %>%
-  select(-c("touch_point_name_111")) %>%
-  rename(if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223 = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_w,
-         name = ada_request_data_name) 
-  
-
-ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
-  
-  # Clean column names, drop unnecessary columns and correct column order.
-  
-  clean_names() %>%
-  
-  # The 2020 data does not ask about hotels/motels or other accommodations, but
-  # we add them here for consistency with 2018 data.
-  
-  mutate(if_the_ada_request_occurred_in_the_hotel_motel_please_indicate = NA) %>%
-  mutate(if_other_ada_accomodation_requested_please_describe_3226 = NA) %>%
-  select(participant_enterprise_identifier, 
-         name,
-         date_taken_111, 
-         where_did_the_ada_request_occur_3211,
-         if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223, 
-         if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
-         date_that_the_central_ada_coordinator_received_ada_request_3212,
-         ada_accommodation_request_3213,
-         if_other_ada_accomodation_requested_please_describe_3226,
-         reason_for_the_ada_request_3214,
-         if_other_reason_please_describe_3227,
-         date_the_decision_made_3215,
-         was_the_ada_request_approved_3216,
-         if_partial_please_explain_3217,
-         if_closed_please_explain_3219,
-         was_the_accommodations_met_3218,
-         how_was_the_accommodation_met_3221,
-         date_the_accommodation_met_3220) 
-
-# Takes in a ADA request tibble that has already been filtered to the 
-# correct columns. This function renames columns, eliminates 
-# hyphens from the pei, eliminates duplicate rows, and pivots the data 
-# so that each row represents a unique accommodation request made (i.e.
-# if someone requested 3 different accommodations on one day, they would
-# appear as 3 different rows). This will allow me to manually go through and
-# account for partial approvals.
-
-clean_ada_request <- function(x) {
-  x <- x %>%
-    
-    # Rename columns.
-    
-    rename(pei = participant_enterprise_identifier,
-           date_received = date_that_the_central_ada_coordinator_received_ada_request_3212,
-           date_decision = date_the_decision_made_3215,
-           date_taken = date_taken_111,
-           date_acc_met = date_the_accommodation_met_3220,
-           req_where = where_did_the_ada_request_occur_3211,
-           shelter_from = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223,
-           hotel_from = if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
-           acc_type = ada_accommodation_request_3213,
-           other_acc_type = if_other_ada_accomodation_requested_please_describe_3226,
-           request_reason = reason_for_the_ada_request_3214,
-           other_request_reason = if_other_reason_please_describe_3227,
-           approved = was_the_ada_request_approved_3216,
-           partial = if_partial_please_explain_3217,
-           closed = if_closed_please_explain_3219,
-           acc_met = was_the_accommodations_met_3218,
-           how_acc_met = how_was_the_accommodation_met_3221) %>%
-    
-    # Eliminate hyphens from the PEI identification number.
-    
-    mutate(pei = gsub("-", "", pei)) %>%
-    
-    # Eliminate duplicate rows.
-    
-    distinct() %>%
-    
-    # No more than 4 accommodations are provided to any one row. So, I divide the
-    # request column into five columns, based on the "\\|" divider. Missing 
-    # values are filled on the right.
-    
-    separate(acc_type, into = c("a", "b", "c", "d", "e"), sep = "\\|", fill = 'right') %>%
-    
-    # I want to collapse these four columns into "tidy" format, where each row
-    # represents a unique request made. So, I pivot the data to make it longer.
-    
-    pivot_longer(cols = c(a, b, c, d, e), 
-                 names_to = "letter_id",  
-                 values_to = "request_type") %>%
-    
-    # If any of the columns c(a, b, c, d, e) were empty before I pivoted longer, 
-    # an "NA" value will appear. Additionally, I notice that some cells seem to
-    # just contain an empty space (likely due to data entry errors). So, I drop
-    # the NAs and remove the cells that are just empty spaces.
-    
-    drop_na(request_type) %>%
-    filter(request_type != "") %>%
-    
-    # I rename certain accommodation request types to ensure that 2018 and
-    # 2020 data follow similar conventions.
-    
-    mutate(request_type = recode(request_type, 
-                                 `Comfort Animal within Placement Unit` = "Assistance Animal within Placement Unit",
-                                 `Scattered Site Placement Unit` = "Scattered Site Placement Unit / Co-housing Unit",
-                                 `Placement Unit Close to Service Providers (when a participant is placed out of area away from their current medical providers)` = "Placement Unit Close to Service Providers",
-                                 `Physical Modification to Placement Unit (visual cues for hearing impaired, grab bars in shower, etc.)` = "Physical Modification to Placement Unit")) %>%
-  
-    # I rename certain accommodation request reasons to ensure that 2018 and
-    # 2020 data follow similar conventions.
-    
-    mutate_if(is.character, str_replace_all, pattern = "Developmental Disability / Behavioral", replacement = "Developmental Disability") %>%
-    mutate_if(is.character, str_replace_all, pattern = "Developmental Disability", replacement = "Developmental Disability / Behavioral") %>%
-    mutate_if(is.character, str_replace_all, pattern = "Mental / Emotional Health", replacement = "Mental Health") %>%
-    
-    # I separate request_reason into multiple columns to account for individuals
-    # that requested accommodations for more than one reason.
-    
-    separate(request_reason, into = c("reason_1", "reason_2", "reason_3", "reason_4"), sep = "\\|", fill = 'right') %>%
-    
-    # I create a variable calculating the days it takes for each unique ADA
-    # request to be met - based on the date_received and data_acc_met columns.
-
-    mutate(days_until_accommodation_met = as.double(difftime(lubridate::ymd(date_acc_met),
-                                                             lubridate::ymd(date_received),
-                                                             units = "days"))) %>%
-    
-    # Re-order columns and drop unnecessary columns.
-    
-    select(pei, name, date_received, date_decision, date_taken, date_acc_met, 
-           days_until_accommodation_met, request_type, reason_1:reason_4, 
-           req_where:how_acc_met) 
-
-  }
-
-ada_request_2018 <- clean_ada_request(ada_request_2018)
-ada_request_2020 <- clean_ada_request(ada_request_2020)
-
-# Combine the 2018 and 2020 touchpoint data.
-
-ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
-write_csv(ada_request_2018_2020, 
-          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_unprocessed.csv")
-
-
-```
 
 ```{r accounting for partial approvals and other categories}
 
@@ -244,8 +93,7 @@ all_adas <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-v
   # evaluate whether additional bedroom requests were met. For now, we 
   # exclude them from our analysis.
   
-  mutate(interesting = ifelse(req_placement_unit_close_to_service_providers == 1 |
-                              req_scattered_site_placement_unit_co_housing_unit == 1 |
+  mutate(interesting = ifelse(req_scattered_site_placement_unit_co_housing_unit == 1 |
                               req_first_floor_or_elevator_access == 1 |
                               req_wheelchair_accessible_placement_unit == 1, 1, 0)) %>%
   
@@ -267,12 +115,6 @@ all_adas <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-v
          req_assigned_caretaker_temporary_non_ea_household_member,
          reason_physical_health:reason_other)
 
-# Filter the data to only count approved requests. 
-# 2108/3638 requests are approved. We assume DHCD correctly approves requests.
-
-# Note: 1847/2108 PEIs only show up once. Some individuals have submitted 
-# multiple approved requests.
-
 boston_zips = c("02101", "02108", "02109", "02110", "02111", "02112", "02113", 
                 "02114", "02115", "02116", "02117", "02118", "02119", "02120", 
                 "02121", "02122", "02123", "02124", "02125", "02126", "02127", 
@@ -283,9 +125,32 @@ boston_zips = c("02101", "02108", "02109", "02110", "02111", "02112", "02113",
                 "02217", "02222", "02228", "02241", "02266", "02283", "02284", 
                 "02293", "02297", "02298", "02445", "02467")
 
-random_zips <- rep_sample_n(as.tibble(boston_zips), 1, replace = TRUE, reps = 2108)
+random_zips <- rep_sample_n(as_tibble(boston_zips), 1, replace = TRUE, reps = 2108)
 
-approved_adas_dates_fixed <- all_adas %>%
+# Only 57/1213 zipcodes of providers were provided. 
+# 13 completely new individuals were added in. 44 individuals had their 
+# zipcodes added in.
+
+service_provider_zipcodes <- read_excel("processed_data/ADA_Geography.xlsx") %>%
+  clean_names() %>%
+  mutate_if(is.character, ~na_if(., "N/A")) %>%
+  mutate_if(is.character, ~na_if(., "NA")) %>%
+  rename(pei = pei_personal_enterprise_identifier) %>%
+  mutate(date_received = as.Date(date_received)) %>%
+  mutate(zipcode_of_provider = if_else(substr(zipcode_of_provider, 1, 1) == "/", 
+                                       substr(zipcode_of_provider, 2, 6), 
+                                       zipcode_of_provider)) %>%
+  filter(!is.na(pei)) %>%
+  select(pei, name, date_received, zipcode_of_provider:misc_notes)
+
+# Filter the data to only count approved requests. 
+# 2108/3638 requests are approved. We assume DHCD correctly approves requests.
+
+# Note: 1847/2108 PEIs only show up once. Some individuals have submitted 
+# multiple approved requests.
+
+approved_adas_dates_fixed <- 
+  left_join(all_adas, service_provider_zipcodes, by = c("pei", "name", "date_received")) %>%
   filter(approved == "Yes") %>%
   select(-approved) %>%
   
@@ -295,15 +160,52 @@ approved_adas_dates_fixed <- all_adas %>%
   mutate(date_acc_met = as.Date(date_acc_met)) %>%
   mutate(date_received = as.Date(date_received)) %>%
   mutate(date_taken = as.Date(date_taken)) %>%
-  mutate(date_decision = as.Date(date_decision)) %>%
-  mutate(zipcode_of_provider = random_zips$value,
-         distance_from_provider_required = 20,
-         type_of_provider = NA,
-         misc_notes = NA)
+  mutate(date_decision = as.Date(date_decision))
   
 # Save this tibble as a compressed RDS file to be used in the Shiny app.
 
 saveRDS(approved_adas_dates_fixed, file = "shiny/data/approved_adas.rds")
+
+```
+
+```{r merge race with existing ADA dataset}
+
+# Data go from 02-11-2011 to 01-09-2020
+
+race_info <- read_excel("raw_data/20200408_Client_DHCD6_511242.xlsx") %>%
+  clean_names() %>%
+  rename(pei = personal_id) %>%
+  
+  # I eliminate rows where there is no race information for the client.
+  # This brings us from 25,506 entries to 23,316 entries.
+  
+  filter(is.na(race_none)) %>%
+  select(pei, dob, am_ind_ak_native:race_none, ethnicity:gender)
+
+# 2,444/3,638 rows have race information.
+
+adas_race <- left_join(all_adas, race_info, by = "pei") 
+
+adas_race_2 <- adas_race %>%
+  filter(!is.na(white)) %>%
+  mutate(am_ind_ak_native = sum(am_ind_ak_native)) %>%
+  mutate(asian = sum(asian)) %>%
+  mutate(black_af_american = sum(black_af_american)) %>%
+  mutate(native_hi_other_pacific = sum(native_hi_other_pacific)) %>%
+  mutate(white = sum(white)) %>%
+  select(am_ind_ak_native: white) %>%
+  head(1) %>%
+  pivot_longer(cols = am_ind_ak_native: white, 
+               names_to = "race", 
+               values_to = "num_requests", 
+               values_drop_na = TRUE) 
+  
+ggplot(data = adas_race_2, mapping = aes(x = race, y = num_requests)) +
+  geom_col() +
+  labs(title = "Racial breakdown of ADA requests",
+       subtitle = "32.82% of race values are missing.",
+       x = "Race",
+       y = "Number of ADA requests")
 
 ```
 
@@ -446,7 +348,7 @@ approved_reasons %>%
 
 ```
 
-```{r create time plots for approved requests}
+```{r approved requests over time}
 
 # I write a function that converts NaN to 0.
 
@@ -458,7 +360,7 @@ fix_nan <- function(x){
 # I create a tibble that contains the number of requests that were approved, 
 # not approved, and the percentage approved for each accommodation type and month.
 
-breakdown_by_time_acc <- all_adas %>%
+breakdown_by_time_acc <- adas_race %>%
   mutate(year = year(date_received)) %>%
   mutate(month = month(date_received)) %>% 
   
@@ -466,6 +368,9 @@ breakdown_by_time_acc <- all_adas %>%
   
   # filter(req_placement_unit_close_to_service_providers == 1) %>%
   
+  # I can add this filter if I want to view these plots by race.
+  
+  # filter(black_af_american == 1) %>%
   group_by(approved, year, month) %>%
   summarize(total_requests = n(), .groups = "drop") %>%
   pivot_wider(names_from = approved, values_from = total_requests) %>%
@@ -479,30 +384,38 @@ breakdown_by_time_acc <- all_adas %>%
 
 ggplot(breakdown_by_time_acc, aes(x = date, y = percent)) + 
   geom_point() +
-  geom_line() +
+  geom_smooth(method = "loess") +
+  ylim(0, 100) +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
   scale_color_discrete(name = "Accommodation Type") +
   labs(title = "Change in ADA approval rate (2015-2019)",
-       x = "Month",
+       x = "Time (by month)",
        y = "Percentage of requests approved")
 
 # I create a plot showing the change in total requests over time.
 
-ggplot(breakdown_by_time_acc, aes(x = date, y = total)) + 
-  geom_point() +
-  geom_line() +
+ggplot(breakdown_by_time_acc, aes(x = date)) + 
+  geom_point(aes(y = total), color = "lightblue") +
+  geom_point(aes(y = yes), color = "pink") +
+  geom_smooth(aes(y = total), method = "loess", color = "blue") +
+  geom_smooth(aes(y = yes), method = "loess", color = "red") +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
   scale_color_discrete(name = "Accommodation Type") +
-  labs(title = "Change in total number of requests (2015-2019)",
-       x = "Month",
-       y = "Total number of requests")
+  labs(title = "Change in number of ADA requests vs. \nchange in number of approved ADA requests (2015-2019)",
+       subtitle = "Change in number of requests is shown in blue. \n Change in approved requests is shown in red.",
+       x = "Time (by month)",
+       y = "Number of requests")
 
 # I create a plot showing the change in approved requests over time.
 
 ggplot(breakdown_by_time_acc, aes(x = date, y = yes)) + 
   geom_point() +
-  geom_line() +
+  geom_smooth(method = "loess") +
+  ylim(0, 100) +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
   scale_color_discrete(name = "Accommodation Type") +
   labs(title = "Change in number of approved requests (2015-2019)",
        x = "Month",
@@ -605,6 +518,7 @@ transfers <- bind_rows(external_transfers, internal_transfers) %>%
 
 ```
 
+
 ```{r merge adas and transfer}
 
 # I use a left_join because I want to keep all of the rows from my approved_adas
@@ -612,13 +526,13 @@ transfers <- bind_rows(external_transfers, internal_transfers) %>%
 
 ada_transfers <- left_join(approved_adas_dates_fixed, transfers, by = "pei") %>% 
   
-  # I eliminate duplicate rows. 6502/7401 rows remain.
+  # I eliminate duplicate rows. 6502/7435 rows remain.
   
   distinct() %>% 
   
   # I am only able to analyze whether requests were met for scattered site,
   # first floor, and wheelchair accessible accommodations.
-  # 5072/6502 rows remain.
+  # 2797/6502 rows remain.
   
   filter(interesting == 1) %>% 
   
@@ -643,7 +557,7 @@ ada_transfers <- left_join(approved_adas_dates_fixed, transfers, by = "pei") %>%
 
   # I filter out cases where the date of referral is before the date the 
   # ADA application was received - because those referrals are not relevant to
-  # address the disability request. 2882/5072 rows remain.
+  # address the disability request. 1454/2797 rows remain.
   
   filter(date_received <= date_referral | is.na(date_referral) | is.na(date_received)) %>%
   select(pei:date_received, date_decision:date_referral)
@@ -707,14 +621,14 @@ transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
 # FUTURE TODO: Look at which shelters are associated with the longest delays.
 
 # Tibble generated when we make the assumption that a hotel transfer meets all
-# unit type accommodations. 2510 observations.
+# unit type accommodations. 1223 observations.
 
 transfers_chars_hotel_t <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = TRUE)
 
 saveRDS(transfers_chars_hotel_t, file = "shiny/data/transfers_chars_hotel_t.rds")
 
 # Tibble generated when we make the assumption that a hotel transfer meets no
-# unit type accommodations. 2510 observations.
+# unit type accommodations. 1223 observations.
 
 transfers_chars_hotel_f <- transfers_include_chars(ada_transfers, shelter_characteristics, hotel = FALSE)
 
@@ -724,43 +638,69 @@ saveRDS(transfers_chars_hotel_f, file = "shiny/data/transfers_chars_hotel_f.rds"
 
 ```{r merge hotel zips}
 
+# I manually Googled hotel names to figure out the correct zipcodes.
+
 hotel_locs <- transfers_chars_hotel_t %>% 
   filter(transfer_type_specific == "hotel_placement") %>% 
   select(transfer_location) %>% 
   distinct() %>%
   arrange(transfer_location) %>%
-  mutate(zipcode_of_transfer = c("02135", "02301", "02301", "01906", "01923", 
-                                 "02135", "01040", "01453", "02726", "01119",
-                                 "02703", "02777", "02148", "01040", "02451",
-                                 "02301", "02188"))
+  mutate(zipcode_of_transfer = c("02135", "01906", "02135", "01040", 
+                                 "02148", "02451","02188"))
+  
+  
+# Correct zipcodes if service providers are included
+# mutate(zipcode_of_transfer = c("02135", "02301", "02301", "01906", "01923", 
+#                                 "02135", "01040", "01453", "02726", "01119",
+#                                 "02703", "02777", "02148", "01040", "02451",
+#                                 "02301", "02188"))
 
-transfers_chars_hotel_t <- 
+# Another intern went through transfer locations without zipcodes and used DHCD
+# vacancy data and Google to deduce the correct zipcodes. Around 15% required
+# some extra corroboration through Google.
+
+caitlin_locs <- read_excel("processed_data/transfer_locations_with_zips.xlsx") %>%
+  clean_names() %>%
+  select(transfer_location, zip_code) %>%
+  rename(zipcode_of_transfer = zip_code)
+
+# Include hotel zipcodes.
+
+transfers_chars_hotel_t_complete <- 
   left_join(transfers_chars_hotel_t, hotel_locs, by = "transfer_location") %>% 
   replace_na(list(zipcode_of_transfer.x = "", zipcode_of_transfer.y = "")) %>% 
-  mutate(zipcode_of_transfer = paste0(zipcode_of_transfer.x, zipcode_of_transfer.y)) %>%
-  select(-c(zipcode_of_transfer.x, zipcode_of_transfer.y))
+  mutate(zipcode_of_transfer = if_else(zipcode_of_transfer.x != zipcode_of_transfer.y, 
+                                  paste0(zipcode_of_transfer.x, zipcode_of_transfer.y),
+                                  zipcode_of_transfer.x)) %>%
+  select(-c(zipcode_of_transfer.x, zipcode_of_transfer.y)) %>%
+  unique()
 
+# Include Caitlin zipcodes. Only 4 out of 1227 rows are without zipcodes.
+
+transfers_chars_hotel_t_complete_2 <- 
+  left_join(transfers_chars_hotel_t_complete, caitlin_locs, by = "transfer_location") %>% 
+  replace_na(list(zipcode_of_transfer.x = "", zipcode_of_transfer.y = "")) %>% 
+  mutate(zipcode_of_transfer = if_else(zipcode_of_transfer.x != "",
+                                       zipcode_of_transfer.x,
+                                       if_else(zipcode_of_transfer.x == "" & zipcode_of_transfer.y != "",
+                                               zipcode_of_transfer.y,
+                                               ""))) %>%
+  select(-c(zipcode_of_transfer.x, zipcode_of_transfer.y)) %>%
+  mutate(zipcode_of_transfer = na_if(zipcode_of_transfer,"")) %>%
+  unique()
+  
 ```
 
 ```{r calculating distance/time between zipcodes}
 
-transfer_locations_without_zips <- transfers_chars_hotel_t %>%
-  filter(str_length(zipcode_of_transfer) < 5) %>% 
-  select(transfer_type, transfer_type_specific, transfer_location) %>%
-  distinct() %>%
-  arrange(transfer_type_specific, transfer_location)
-
-write_csv(transfer_locations_without_zips, 
-          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/transfer_locations_without_zips.csv")
-
-btwn_zips <- transfers_chars_hotel_t %>%
-  select(pei, zipcode_of_transfer, zipcode_of_provider) %>%
+btwn_zips <- transfers_chars_hotel_t_complete_2 %>%
+  select(pei:date_received, zipcode_of_transfer, zipcode_of_provider) %>%
   mutate(zipcode_of_transfer = str_c(zipcode_of_transfer, ", USA")) %>%
   mutate(zipcode_of_provider = str_c(zipcode_of_provider, ", USA")) %>%
-  replace_na(list(zipcode_of_transfer = "98607, USA", zipcode_of_provider = "98607, USA")) %>%
-  head(100) %>%
+  filter(!is.na(zipcode_of_provider) & !is.na(zipcode_of_transfer)) %>%
   mutate(dist_btwn_zips = mapdist(zipcode_of_transfer, zipcode_of_provider) %>% select(miles)) %>%
-  mutate(time_btwn_zips = mapdist(zipcode_of_transfer, zipcode_of_provider) %>% select(minutes))
+  mutate(time_btwn_zips = mapdist(zipcode_of_transfer, zipcode_of_provider) %>% select(minutes)) %>%
+  mutate(within_twenty = if_else(dist_btwn_zips < 20, 1, 0))
   
 ```
 
@@ -803,7 +743,7 @@ supplement_date_acc_met <- function(df){
                                                       date_referral,
                                                       units = "days"))) %>%
       
-    # If a date_acc_met value already exists, keep it. 
+    # If a date_acc_met value already exists, we keep it. - ASK: YES OR NO?
     
     mutate(date_acc_met = ifelse(!is.na(date_acc_met), 
                                  date_acc_met, 
@@ -834,10 +774,9 @@ supplement_date_acc_met <- function(df){
                                                              units = "days")))
 }
 
-# For requests that ask for either service provider, scattered site, 
-# first floor, or wheelchair, I substitute missing date_acc_met values with 
-# transfer information and assume that hotel transfers meet all unit type 
-# accommodations. 1204 rows.
+# For requests that ask for either scattered site, first floor, or wheelchair, 
+# I substitute missing date_acc_met values with transfer information and assume 
+# that hotel transfers meet all unit type accommodations. 609 rows.
 
 supplemented_interesting_ada_transfers_t <- supplement_date_acc_met(transfers_chars_hotel_t) %>%
   filter(days_until_accommodation_met >= 0) 
@@ -862,7 +801,7 @@ supplemented_interesting_ada_transfers_t %>%
            y = "Probability")
 
 # For requests that ask for either service provider, scattered site, 
-# first floor, or wheelchair, I substitute missing date_acc_met values with 
+# first floor, or wheelchair, I substitute all date_acc_met values with 
 # transfer information and assume that hotel transfers don't meet all unit type 
 # accommodations. 1204 rows.
 
@@ -943,6 +882,69 @@ create_kaplan_meier(supplemented_interesting_ada_transfers_f)
 ```
 
 $$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilon_i $$
+```{r clean noncompliance data}
+issued_nc <- read_excel("raw_data/20200408_Issued Noncompliance_DHCD6_511266.xlsx") %>%
+  clean_names() %>%
+  rename(pei = participant_enterprise_identifier,
+         date_nc = date_of_incident,
+         notice_type = type_of_notice_issued_2500,
+         violation_type = what_type_of_violation_2712) %>%
+  select(pei, date_nc, notice_type, violation_type) %>%
+  
+  # Eliminate hyphens from the PEI identification number.
+    
+  mutate(pei = gsub("-", "", pei)) %>%
+  
+  # No more than 3 violations are provided to any one row. So, I divide the
+  # violation_type column into three columns, based on the "\\|" divider. 
+  # Missing values are filled on the right.
+    
+  separate(violation_type, into = c("violation_1", "violation_2", "violation_3"), sep = "\\|", fill = 'right') %>%
+  mutate(violation_1 = na_if(violation_1,""),
+         violation_2 = na_if(violation_2,""),
+         violation_3 = na_if(violation_3,""))
+
+issued_nc %>%
+  group_by(notice_type) %>%
+  summarize(num_notices = n()) %>%
+  arrange(desc(num_notices)) %>% View()
+
+issued_nc %>%
+  pivot_longer(cols = c(violation_1, violation_2, violation_3), 
+               names_to = "violation",  
+               values_to = "violation_type") %>%
+  drop_na(violation_type) %>%
+  filter(violation_type != "") %>%
+  group_by(notice_type, violation_type) %>%
+  summarize(num_violations = n()) %>%
+  arrange(desc(num_violations)) %>% View()
+```
+
+```{r noncompliance model}
+  
+# I use a left join because I want to keep all of the rows from my 
+# supplemented_interesting_ada_transfers_t tibble - even if there is no 
+# corresponding non-compliance information.This merge will allow me to see 
+# whether the individual received a non-compliance during their wait for
+# disability accommodation.
+
+# 105/609 individuals approved for scattered site, first floor, or wheelchair
+# access were issued a non-compliance at any point.
+
+# 105/609 individuals approved for scattered site, first floor, or wheelchair
+# access were issued a non-compliance at any point.
+
+# 72/105 of those individuals had a noncompliance after they applied for 
+# disability accommodation.
+
+# 6/72 of those individuals had a noncompliance after they applied for 
+# disability accommodation AND before they received accommodation.
+
+ada_ncs <- left_join(supplemented_interesting_ada_transfers_t, issued_nc, by = "pei") %>% 
+  filter(date_nc >= date_received & date_nc <= date_acc_met) %>% 
+  select(pei, name, date_received:days_until_accommodation_met, date_nc, dhcd_data_exists)
+
+```
 
 ```{r model}
 
@@ -1109,6 +1111,17 @@ ada_no_transfers_supplemented <-
 write_csv(ada_no_transfers_supplemented, 
           path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_no_transfers_supplemented.csv")
 
+# Generate spreadsheet of transfer locations without zipcodes.
+
+transfer_locations_without_zips <- transfers_chars_hotel_t %>%
+  filter(str_length(zipcode_of_transfer) < 5) %>% 
+  select(transfer_type, transfer_type_specific, transfer_location) %>%
+  distinct() %>%
+  arrange(transfer_type_specific, transfer_location)
+
+write_csv(transfer_locations_without_zips, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/transfer_locations_without_zips.csv")
+
 ```
 
 ```{r interactive process analysis}
@@ -1139,8 +1152,9 @@ ip <- active_portfolio %>%
 
 ggplot(ip, aes(x = date, y = total)) + 
   geom_point() +
-  geom_line() +
+  geom_smooth(method = "loess") +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
   labs(title = "Change in number of interactive process requests",
        x = "Month",
        y = "Number of interactive process requests")
@@ -1161,8 +1175,9 @@ ip_respond <- active_portfolio %>%
 
 ggplot(ip_respond, aes(x = date, y = responded)) + 
   geom_point() +
-  geom_line() +
+  geom_smooth(method = "loess") +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
   labs(title = "Change in number of interactive process requests that had either \n a follow-up contact, additional paperwork received, or a final decision made",
        x = "Month",
        y = "Number of interactive process requests")
@@ -1185,8 +1200,9 @@ ip_respond_acc <- active_portfolio %>%
 
 ggplot(ip_respond_acc, aes(x = date, y = accommodated)) + 
   geom_point() +
-  geom_line() +
+  geom_smooth(method = "loess") +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
   labs(title = "Change in number of interactive process requests that receive \nfollow-up and accommodation",
        subtitle = "A response can be either a follow-up contact, additional paperwork received, or final decision made.\nAn accommodation can be either partial or full accommodation.",
        x = "Month",
@@ -1201,8 +1217,10 @@ respond_rate <- left_join(ip, ip_respond, by = c("year", "month", "date")) %>%
 
 ggplot(respond_rate, aes(x = date, y = percent)) + 
   geom_point() +
-  geom_line() +
+  geom_smooth(method = "loess") +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  ylim(0, 100) +
   labs(title = "Change in percentage of interactive process requests that received a response",
        subtitle = "A response can be either a follow-up contact, additional paperwork received, or final decision made.",
        x = "Month",
@@ -1217,25 +1235,106 @@ accommodation_rate <- left_join(ip, ip_respond_acc, by = c("year", "month", "dat
 
 ggplot(accommodation_rate, aes(x = date, y = percent)) + 
   geom_point() +
-  geom_line() +
+  geom_smooth(method = "loess") +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  ylim(0, 100) +
   labs(title = "Change in percentage of interactive process requests that received accommodation",
        subtitle = "An accommodation can be either partial or full accommodation.",
        x = "Month",
        y = "% of IP requests that received accommodation")
 
 accommodation_rate_2 <- left_join(ip_respond, ip_respond_acc, by = c("year", "month", "date")) %>%
-  mutate(percent = accommodated/responded * 100) %>%
-  select(date, accommodated, responded, percent)
+  left_join(ip, by = c("year", "month", "date")) %>%
+  mutate(percent_acc_resp = accommodated/responded * 100) %>%
+  select(date, accommodated, responded, total, percent_acc_resp)
 
-ggplot(accommodation_rate_2, aes(x = date, y = percent)) + 
-  geom_point() +
-  geom_line() +
+ggplot(accommodation_rate_2, aes(x = date)) + 
+  geom_point(aes(y = responded), color = "pink") +
+  geom_smooth(aes(y = responded), method = "loess", color = "red") +
+  geom_point(aes(y = accommodated), color = "lightblue") +
+  geom_smooth(aes(y = accommodated), method = "loess", color = "blue") +
+  geom_point(aes(y = total), color = "lightgreen") +
+  geom_smooth(aes(y = total), method = "loess", color = "green") +
   theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  labs(title = "Change in number of interactive process requests over time",
+       subtitle = "A response can be either a follow-up contact, additional paperwork received, or final decision made.\nAn accommodation can be either partial or full accommodation.",
+       x = "Time (by month)",
+       y = "Number of interactive process requests")
+
+
+ggplot(accommodation_rate_2, aes(x = date, y = percent_acc_resp)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylim(0, 100) +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
   labs(title = "Change in percentage of interactive process requests w/ response \nthat received accommodation",
        subtitle = "An accommodation can be either partial or full accommodation.",
        x = "Month",
        y = "% of IP requests w/ response that received accommodation")
+```
+```{r vacancy analysis}
+
+col_types <- cols(
+  .default = col_character(),
+  FAM = col_double(),
+  BED = col_double(),
+  TODD = col_double(),
+  TWIN = col_double(),
+  BUNK = col_double(),
+  FULL = col_double(),
+  TWINWTRUN = col_double(),
+  BUNKWTRUN = col_double(),
+  TYPE = col_logical(),
+  RESPONSEID_109 = col_logical(),
+  AUDITDATE_109 = col_logical(),
+  DISABLED = col_logical(),
+  LASTRESPONSE = col_logical(),
+  ISACTIVE = col_logical(),
+  REFERRALSTATUS = col_logical(),
+  Date.Created = col_date(format = "")
+)
+
+# I pivot my processed data so that each row represents one request 
+# i.e. each row is uniquely identified by PEI + date_received.
+
+vacancies <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/raw_data/VacancyReports_DHCD.csv",
+                      col_types = col_types)
+
+# Note: 29.68% of type values are missing. 
+# Note: Dates go from 12/21/2016 to 12/24/2019 for scattered site units. 
+#       Dates go from 12/06/2016 to 12/24/2019 for the entire dataset.
+
+vacancies_clean <- vacancies %>%
+  clean_names() %>%
+  
+  # Went from 38913 entries to 4453 entries.
+  
+  filter(type == "Scattered Sites") %>%
+  
+  # Went from 4453 entries to 4358 entries. 
+  
+  filter(!is.na(date_created)) %>%
+  
+  # Find the number of scattered site vacancies per month from 12/21/2016 to 12/24/2019
+  
+  mutate(year = year(date_created)) %>%
+  mutate(month = month(date_created)) %>% 
+  group_by(year, month) %>%
+  summarize(total = n(), .groups = "drop") %>%
+  mutate(date = make_date(year, month))
+
+ggplot(vacancies_clean, aes(x = date, y = total)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  labs(title = "Change in number of scattered site vacancies over time",
+       subtitle = "This displays data for 12/21/2016 to 12/24/2019.",
+       x = "Month",
+       y = "Number of vacancies")
 
 
 ```
