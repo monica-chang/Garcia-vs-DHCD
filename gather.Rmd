@@ -751,7 +751,7 @@ supplement_date_acc_met <- function(df){
                                  # Else, if the request was met by the transfer, 
                                  # replace date_acc_met with date_referral.
                                  # If the request was never met, set a 1-year
-                                 # censorship date.
+                                 # censorship date. ASK: Should I do this?
                                  
                                  ifelse(unit_type_acc_met == 1, 
                                         as.Date(date_referral), 
@@ -882,68 +882,140 @@ create_kaplan_meier(supplemented_interesting_ada_transfers_f)
 ```
 
 $$ wait\_time_i = \beta_0 + \beta_1 reason_i + \beta_2 accommodation_i + \epsilon_i $$
-```{r clean noncompliance data}
-issued_nc <- read_excel("raw_data/20200408_Issued Noncompliance_DHCD6_511266.xlsx") %>%
-  clean_names() %>%
-  rename(pei = participant_enterprise_identifier,
-         date_nc = date_of_incident,
-         notice_type = type_of_notice_issued_2500,
-         violation_type = what_type_of_violation_2712) %>%
-  select(pei, date_nc, notice_type, violation_type) %>%
-  
-  # Eliminate hyphens from the PEI identification number.
-    
-  mutate(pei = gsub("-", "", pei)) %>%
-  
-  # No more than 3 violations are provided to any one row. So, I divide the
-  # violation_type column into three columns, based on the "\\|" divider. 
-  # Missing values are filled on the right.
-    
-  separate(violation_type, into = c("violation_1", "violation_2", "violation_3"), sep = "\\|", fill = 'right') %>%
-  mutate(violation_1 = na_if(violation_1,""),
-         violation_2 = na_if(violation_2,""),
-         violation_3 = na_if(violation_3,""))
 
-issued_nc %>%
-  group_by(notice_type) %>%
-  summarize(num_notices = n()) %>%
-  arrange(desc(num_notices)) %>% View()
-
-issued_nc %>%
-  pivot_longer(cols = c(violation_1, violation_2, violation_3), 
-               names_to = "violation",  
-               values_to = "violation_type") %>%
-  drop_na(violation_type) %>%
-  filter(violation_type != "") %>%
-  group_by(notice_type, violation_type) %>%
-  summarize(num_violations = n()) %>%
-  arrange(desc(num_violations)) %>% View()
-```
-
-```{r noncompliance model}
-  
+```{r merge ada and noncompliance data}
+issued_ncs <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/issued_ncs.csv")
+                      
 # I use a left join because I want to keep all of the rows from my 
 # supplemented_interesting_ada_transfers_t tibble - even if there is no 
 # corresponding non-compliance information.This merge will allow me to see 
 # whether the individual received a non-compliance during their wait for
 # disability accommodation.
 
-# 105/609 individuals approved for scattered site, first floor, or wheelchair
+# 138/609 individuals approved for scattered site, first floor, or wheelchair
 # access were issued a non-compliance at any point.
 
-# 105/609 individuals approved for scattered site, first floor, or wheelchair
-# access were issued a non-compliance at any point.
-
-# 72/105 of those individuals had a noncompliance after they applied for 
+# 86/105 of those individuals had a noncompliance after they applied for 
 # disability accommodation.
 
-# 6/72 of those individuals had a noncompliance after they applied for 
+# 19/72 of those individuals had a noncompliance after they applied for 
 # disability accommodation AND before they received accommodation.
 
-ada_ncs <- left_join(supplemented_interesting_ada_transfers_t, issued_nc, by = "pei") %>% 
-  filter(date_nc >= date_received & date_nc <= date_acc_met) %>% 
-  select(pei, name, date_received:days_until_accommodation_met, date_nc, dhcd_data_exists)
+ada_ncs <- left_join(supplemented_interesting_ada_transfers_t, issued_ncs, by = "pei") %>%
+  select(pei, name, date_received, date_decision, date_nc, date_referral, date_acc_met, days_until_accommodation_met)
 
+# This table only contains the date of the first noncompliance (if it exists)
+# for any individual.
+
+ada_ncs_first <- ada_ncs %>%
+  
+  # I filter to only keep dates of noncompliance if they occurred after the
+  # individual applied for disability accommodation.
+  
+  mutate(date_nc = if_else(is.na(date_nc), date_nc, if_else(date_nc > date_received, date_nc, as.POSIXct(NA)))) %>%
+ 
+  # Group the data by each unique pei-date_received combo.
+  
+  group_by(pei, date_received) %>%
+  
+  # Keep the earliest issued noncompliance after the individual applied for 
+  # disability accommodation (if it exists).
+  
+  arrange(date_nc) %>%
+  slice(1)
+  
+ada_ncs_interesting <- ada_ncs %>%
+  filter(!is.na(date_nc)) %>%
+  filter(date_nc >= date_received & date_nc <= date_acc_met) %>%
+  select(pei, name, date_received, date_decision, date_nc, date_referral, date_acc_met, days_until_accommodation_met)
+```
+
+```{r merge ada and exit data}
+hud_data <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/hud_exit_data.csv") %>%
+  filter(exit_destination != "shelter" | is.na(exit_destination)) 
+
+# ASK: Should I keep "transferred" exit outcomes if they aren't transferred to shelter?
+
+hud_tesi_data <- hud_data %>%
+  filter(exit_reason == "Temporary Emergency Shelter Interruption") %>%
+  rename(date_tesi = date_exit) %>%
+  select(pei, date_tesi)
+
+hud_exit_data <- hud_data %>%
+  filter(exit_reason != "Temporary Emergency Shelter Interruption")
+                      
+# I use a left join because I want to keep all of the rows from my 
+# ada_ncs tibble - even if there is no corresponding exit information.
+# This merge will allow me to see what kind of exit outcome the individual 
+# received.
+
+ada_ncs_tesi <- left_join(ada_ncs_first, hud_tesi_data, by = "pei") %>%
+  select(pei, name, date_received, date_decision, date_referral, date_acc_met, days_until_accommodation_met, date_nc, date_tesi)
+
+ada_ncs_tesi_first <- ada_ncs_tesi %>%
+  
+  # I filter to only keep dates of TESI if they occurred after the
+  # individual applied for disability accommodation.
+  
+  mutate(date_tesi = if_else(is.na(date_tesi), date_tesi, if_else(date_tesi > date_received, date_tesi, as.POSIXct(NA)))) %>%
+ 
+  # Group the data by each unique pei-date_received combo.
+  
+  group_by(pei, date_received) %>%
+  
+  # Keep the earliest issued TESI after the individual applied for 
+  # disability accommodation (if it exists).
+  
+  arrange(date_tesi) %>%
+  slice(1)
+  
+ada_ncs_tesi_exit <- left_join(ada_ncs_tesi_first, hud_exit_data, by = "pei") %>%
+  select(pei, name, date_received, date_decision, date_referral, date_acc_met, days_until_accommodation_met, date_nc, date_tesi, date_exit, exit_reason) 
+
+ada_ncs_tesi_exit_first <- ada_ncs_tesi_exit %>%
+  
+  # I filter to only keep dates of exit if they occurred after 
+  # the individual applied for disability accommodation.
+
+  mutate(date_exit = if_else(is.na(date_exit), date_exit, if_else(date_exit > date_received, date_exit, as.POSIXct(NA)))) %>%
+ 
+  # Group the data by each unique pei-date_received combo.
+  
+  group_by(pei, date_received) %>%
+  
+  # Keep the earliest exit after the individual applied for 
+  # disability accommodation (if it exists).
+  
+  arrange(date_exit) %>%
+  slice(1)
+
+ada_ncs_tesi_exit_final <- ada_ncs_tesi_exit_first %>%
+    mutate(date_referral = as.Date(date_referral),
+           date_nc = as.Date(date_nc),
+           date_tesi = as.Date(date_tesi),
+           date_exit = as.Date(date_exit)) %>%
+    mutate(last_followup = date_received) %>%
+    mutate(last_followup = if_else(!is.na(date_decision) & date_decision > last_followup, date_decision, last_followup)) %>%
+    mutate(last_followup = if_else(!is.na(date_referral) & date_referral > last_followup, date_referral, last_followup)) %>%
+    mutate(last_followup = if_else(!is.na(date_acc_met) & date_acc_met > last_followup, date_acc_met, last_followup)) %>%
+    mutate(last_followup = if_else(!is.na(date_nc) & date_nc > last_followup, date_nc, last_followup)) %>%
+    mutate(last_followup = if_else(!is.na(date_tesi) & date_tesi > last_followup, date_tesi, last_followup)) %>%
+    mutate(last_followup = if_else(!is.na(date_exit) & date_exit > last_followup, date_exit, last_followup)) 
+
+# 439/609 individuals approved for scattered site, first floor, or wheelchair
+# access had an exit outcome at any point.
+
+# 402/439 of those individuals had an exit outcome after they applied for 
+# disability accommodation.
+
+# 64/402 of those individuals had an exit outcome after they applied for 
+# disability accommodation AND before they received accommodation. How is
+# this possible?
+
+ada_ncs_tesi_exit_interesting <- ada_ncs_tesi_exit %>%
+  filter(!is.na(date_exit)) %>%
+  filter(date_exit >= date_received) %>%
+  select(pei, name, date_received, date_decision, date_nc, date_referral, date_acc_met, days_until_accommodation_met, date_exit)
 ```
 
 ```{r model}

@@ -16,13 +16,10 @@ library(janitor)
 library(rsample)
 library(rstanarm)
 library(tidymodels)
-library(ggmap)
-library(leaflet)
-library(tidyquant)
 ```
 
-```{r clean noncompliance data}
-issued_nc <- read_excel("raw_data/20200408_Issued Noncompliance_DHCD6_511266.xlsx") %>%
+```{r clean 2020 noncompliance data}
+issued_nc_2020 <- read_excel("raw_data/20200408_Issued Noncompliance_DHCD6_511266.xlsx") %>%
   clean_names() 
 
 enrollment <- read_excel("raw_data/20200408_DHCD Enrollment_Data_DHCD6_511263.xlsx") %>%
@@ -31,7 +28,7 @@ enrollment <- read_excel("raw_data/20200408_DHCD Enrollment_Data_DHCD6_511263.xl
 enrollment %>%
   group_by(termination_reason) %>%
   summarize(number = n()) %>% 
-  arrange(desc(number)) %>% View()
+  arrange(desc(number)) 
 
 unique(enrollment$termination_reason)
 
@@ -54,7 +51,7 @@ family_shelter_exit_data %>%
   filter(subsidy_type != "") %>%
   group_by(subsidy_type) %>%
   summarize(num_subsidy = n()) %>% 
-  arrange(desc(num_subsidy)) %>% View()
+  arrange(desc(num_subsidy)) 
 
 exit_data <- read_excel("raw_data/20200408_Exit_DHCD6_511249.xlsx") %>%
   clean_names()
@@ -100,7 +97,7 @@ exit_data %>%
                              `99` = "data not collected")) %>%
   group_by(destination) %>%
   summarize(number = n()) %>% 
-  arrange(desc(number)) %>% View()
+  arrange(desc(number)) 
 
 unique(exit_data$housing_assessment %>% sort())
 
@@ -117,26 +114,230 @@ exit_data %>%
                               )) %>%
   group_by(housing_assessment) %>%
   summarize(number = n()) %>% 
-  arrange(desc(number)) %>% View()
+  arrange(desc(number)) 
 
 unique(exit_data$subsidy_information %>% sort())
 
 exit_data %>%
   group_by(subsidy_information) %>%
   summarize(number = n()) %>% 
-  arrange(desc(number)) %>% View()
+  arrange(desc(number)) 
 
-hud_exit_data <- read_excel("raw_data/20200408_HUD Exit_Data_with_Termination Reason_DHCD6_511260.xlsx") %>%
+hud_exit_data_2020 <- read_excel("raw_data/20200408_HUD Exit_Data_with_Termination Reason_DHCD6_511260.xlsx") %>%
   clean_names()
 
-unique(hud_exit_data$destination %>% sort())
-unique(hud_exit_data$housing_assessment %>% sort())
-unique(hud_exit_data$subsidy_information)
-unique(hud_exit_data$termination_reason %>% sort())
+unique(hud_exit_data_2020$destination %>% sort())
+unique(hud_exit_data_2020$housing_assessment %>% sort())
+unique(hud_exit_data_2020$subsidy_information)
+unique(hud_exit_data_2020$termination_reason %>% sort())
 
-hud_exit_data %>%
+hud_exit_data_2020 %>%
+  group_by(termination_reason) %>%
+  summarize(number = n()) %>% 
+  arrange(desc(number)) 
+
+hud_exit_data_2020 %>%
+  select(exit_date) %>%
+  arrange(exit_date)
+```
+
+```{r clean 2018 noncompliance data}
+issued_nc_2018 <- read_excel("raw_data/10_NonCompliance_TPs.xlsx") %>%
+  clean_names() %>%
+  rename(pei = participant_enterprise_identifier,
+         date_nc = date_of_incident_2497,
+         notice_type = type_of_notice_issued_2500,
+         violation_type = what_type_of_violation_2712) %>%
+  select(pei, date_nc, notice_type, violation_type) %>%
+  
+  # Eliminate hyphens from the PEI identification number.
+    
+  mutate(pei = gsub("-", "", pei)) %>%
+  
+  # No more than 3 violations are provided to any one row. So, I divide the
+  # violation_type column into three columns, based on the "\\|" divider. 
+  # Missing values are filled on the right.
+    
+  separate(violation_type, into = c("violation_1", "violation_2", "violation_3"), sep = "\\|", fill = 'right') %>%
+  mutate(violation_1 = na_if(violation_1,""),
+         violation_2 = na_if(violation_2,""),
+         violation_3 = na_if(violation_3,""))
+```
+
+```{r merge noncompliance data}
+issued_nc_2020 <- read_excel("raw_data/20200408_Issued Noncompliance_DHCD6_511266.xlsx") %>%
+  clean_names() 
+  rename(pei = participant_enterprise_identifier,
+         date_nc = date_of_incident,
+         notice_type = type_of_notice_issued_2500,
+         violation_type = what_type_of_violation_2712) %>%
+  select(pei, date_nc, notice_type, violation_type) %>%
+  
+  # Eliminate hyphens from the PEI identification number.
+    
+  mutate(pei = gsub("-", "", pei)) %>%
+  
+  # No more than 3 violations are provided to any one row. So, I divide the
+  # violation_type column into three columns, based on the "\\|" divider. 
+  # Missing values are filled on the right.
+    
+  separate(violation_type, into = c("violation_1", "violation_2", "violation_3"), sep = "\\|", fill = 'right') %>%
+  mutate(violation_1 = na_if(violation_1,""),
+         violation_2 = na_if(violation_2,""),
+         violation_3 = na_if(violation_3,""))
+
+issued_ncs <- bind_rows(issued_nc_2020, issued_nc_2018) %>%
+  arrange(date_nc) %>%
+  rename(nc_notice_type = notice_type,
+         nc_violation_1 = violation_1,
+         nc_violation_2 = violation_2,
+         nc_violation_3 = violation_3)
+
+write_csv(issued_ncs, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/issued_ncs.csv")
+```
+
+```{r clean 2018 and 2020 hud exit data}
+
+hud_exit_data_2018 <- read_excel("raw_data/20181220_HUD_Exit_Data_with_Termination Reason.xlsx") %>%
+  clean_names() %>%
+  rename(pei = personal_id,
+         date_exit = exit_date) %>%
+  
+  # Eliminate hyphens from the PEI identification number.
+    
+  mutate(pei = gsub("-", "", pei)) %>%
+  
+  # I recode the destination codes so they are more interpretable.
+
+  mutate(destination = recode(destination, 
+                             `1` = "shelter",
+                             `2` = "transitional housing program",
+                             `3` = "permanent housing for formerly homeless persons",
+                             `4` = "psychiatric facility",
+                             `5` = "substance abuse treatment program",
+                             `6` = "hospital or other non-psych medical facility",
+                             `7` = "jail/prison",
+                             `8` = "client doesn’t know",
+                             `9` = "client refused",
+                             `10` = "rental by client, no ongoing subsidy",
+                             `11` = "owned by client, no ongoing subsidy",
+                             `12` = "temporarily staying with family",
+                             `13` = "temporarily staying with friends",
+                             `14` = "hotel/motel without emergency shelter voucher",
+                             `15` = "foster care/foster group home",
+                             `16` = "place not meant for human habitation",
+                             `17` = "other – defined by HMIS as not a positive outcome",
+                             `18` = "safe haven",
+                             `19` = "rental by client with VASH housing subsidy",
+                             `20` = "rental by client with other ongoing housing subsidy",
+                             `21` = "owned by client with ongoing subsidy",
+                             `22` = "permanently staying with family",
+                             `23` = "permanently staying with friends",
+                             `24` = "deceased",
+                             `25` = "long-term care facility/nursing home",
+                             `26` = "moved from HOPWA to HOPWA PH",
+                             `27` = "moved from HOPWA to HOPWA TH",
+                             `28` = "rental by client with GPD TIP subsidy – VA-funded Grant Per Diem Transition in Place",
+                             `29` = "residential/halfway house with no homeless criteria",
+                             `30` = "no exit interview completed",
+                             `31` = "rental by client with rapid rehousing or equivalent",
+                             `33` = "rental by client with Section 8",
+                             `34` = "rental by client in public housing",
+                             `33` = "rental by client with Section 8",
+                             `99` = "data not collected")) %>%
+  mutate(termination_reason = recode(termination_reason, 
+                             `Feasible ALT Housing w/ HB Household Assistance` = "Feasible Alt Housing w/ HB Household Assistance",
+                             `Feasible ALT Housing w/o HB Household Assistance` = "Feasible Alt Housing w/o HB Household Assistance",
+                             `Feasible Alt Housing w/ Household Assistance` = "Feasible Alt Housing w/ HB Household Assistance",
+                             `Abandon of Shelter Plmnt/2 Consecutive NA overngts` = "Abandon of Shelter Plmnt/2 consecutive NA overngts",
+                             `Abandon of Shelter Plmnt/2consecutive NA overngts` = "Abandon of Shelter Plmnt/2 consecutive NA overngts",
+                             `Abandonment of Shelter Placement` = "Abandon of Shelter Plmnt/2 consecutive NA overngts",
+                             `Feasible ALT w/o HB Household Assistance` = "Feasible Alt Housing w/o HB Household Assistance",
+                             `Feasible ALT Housing w/o HB Household Assitance` = "Feasible Alt Housing w/o HB Household Assistance",
+                             `2nd Noncompliance: Threat health and safety` = "2nd Noncompliance: Threat to health and safety",
+                             `Abandon Shelter Plmnt/2 Consecutive NA overngts` = "Abandon of Shelter Plmnt/2 consecutive NA overngts",
+                             `Feasible ALT HSG: Other (inc needs not met)` = "Feasible ALT HSG: Other (inc needs not being met)",
+                             `Feasible ALT HSG - Other (inc needs not being met)` = "Feasible ALT HSG: Other (inc needs not being met)")) %>%
+  select(pei, date_exit, destination, termination_reason)
+
+hud_exit_data_2018 %>%
   group_by(termination_reason) %>%
   summarize(number = n()) %>% 
   arrange(desc(number)) %>% View()
 
+hud_exit_data_2020 <- read_excel("raw_data/20200408_HUD Exit_Data_with_Termination Reason_DHCD6_511260.xlsx") %>%
+  clean_names() %>%
+  rename(pei = personal_id,
+         date_exit = exit_date) %>%
+  
+  # Eliminate hyphens from the PEI identification number.
+    
+  mutate(pei = gsub("-", "", pei)) %>%
+  
+  # I recode the destination codes so they are more interpretable.
+
+  mutate(destination = recode(destination, 
+                             `1` = "shelter",
+                             `2` = "transitional housing program",
+                             `3` = "permanent housing for formerly homeless persons",
+                             `4` = "psychiatric facility",
+                             `5` = "substance abuse treatment program",
+                             `6` = "hospital or other non-psych medical facility",
+                             `7` = "jail/prison",
+                             `8` = "client doesn’t know",
+                             `9` = "client refused",
+                             `10` = "rental by client, no ongoing subsidy",
+                             `11` = "owned by client, no ongoing subsidy",
+                             `12` = "temporarily staying with family",
+                             `13` = "temporarily staying with friends",
+                             `14` = "hotel/motel without emergency shelter voucher",
+                             `15` = "foster care/foster group home",
+                             `16` = "place not meant for human habitation",
+                             `17` = "other – defined by HMIS as not a positive outcome",
+                             `18` = "safe haven",
+                             `19` = "rental by client with VASH housing subsidy",
+                             `20` = "rental by client with other ongoing housing subsidy",
+                             `21` = "owned by client with ongoing subsidy",
+                             `22` = "permanently staying with family",
+                             `23` = "permanently staying with friends",
+                             `24` = "deceased",
+                             `25` = "long-term care facility/nursing home",
+                             `26` = "moved from HOPWA to HOPWA PH",
+                             `27` = "moved from HOPWA to HOPWA TH",
+                             `28` = "rental by client with GPD TIP subsidy – VA-funded Grant Per Diem Transition in Place",
+                             `29` = "residential/halfway house with no homeless criteria",
+                             `30` = "no exit interview completed",
+                             `31` = "rental by client with rapid rehousing or equivalent",
+                             `33` = "rental by client with Section 8",
+                             `34` = "rental by client in public housing",
+                             `33` = "rental by client with Section 8",
+                             `99` = "data not collected")) %>%
+  mutate(termination_reason = recode(termination_reason, 
+                             `Feasible ALT Housing w/ HB Household Assistance` = "Feasible Alt Housing w/ HB Household Assistance",
+                             `Feasible ALT Housing w/o HB Household Assistance` = "Feasible Alt Housing w/o HB Household Assistance",
+                             `Feasible Alt Housing w/ Household Assistance` = "Feasible Alt Housing w/ HB Household Assistance",
+                             `Abandon of Shelter Plmnt/2 Consecutive NA overngts` = "Abandon of Shelter Plmnt/2 consecutive NA overngts",
+                             `Abandon of Shelter Plmnt/2consecutive NA overngts` = "Abandon of Shelter Plmnt/2 consecutive NA overngts",
+                             `Abandonment of Shelter Placement` = "Abandon of Shelter Plmnt/2 consecutive NA overngts",
+                             `Feasible ALT w/o HB Household Assistance` = "Feasible Alt Housing w/o HB Household Assistance",
+                             `Feasible ALT Housing w/o HB Household Assitance` = "Feasible Alt Housing w/o HB Household Assistance",
+                             `2nd Noncompliance: Threat health and safety` = "2nd Noncompliance: Threat to health and safety",
+                             `Abandon Shelter Plmnt/2 Consecutive NA overngts` = "Abandon of Shelter Plmnt/2 consecutive NA overngts",
+                             `Feasible ALT HSG: Other (inc needs not met)` = "Feasible ALT HSG: Other (inc needs not being met)",
+                             `Feasible ALT HSG - Other (inc needs not being met)` = "Feasible ALT HSG: Other (inc needs not being met)")) %>%
+  select(pei, date_exit, destination, termination_reason)
+
+hud_exit_data_2020 %>%
+  group_by(termination_reason) %>%
+  summarize(number = n()) %>% 
+  arrange(desc(number)) %>% View()
+
+hud_exit_data <- bind_rows(hud_exit_data_2020, hud_exit_data_2018) %>%
+  arrange(date_exit) %>%
+  rename(exit_destination = destination,
+         exit_reason = termination_reason)
+
+write_csv(hud_exit_data, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/hud_exit_data.csv")
 ```
