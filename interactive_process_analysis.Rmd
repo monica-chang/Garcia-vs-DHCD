@@ -1,0 +1,174 @@
+---
+title: "Interactive Process Analysis"
+author: "Monica Chang"
+date: "8/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+```
+
+```{r interactive process analysis}
+
+# I read in Erin's spreadsheet and select relevant columns to know when an 
+# individual's application was received, whether they were engaged in an 
+# interactive process, whether they received some form of response, and 
+# whether they were accommodated.
+
+erin_data <- "raw_data/erin_data.xls"
+excel_sheets(path = erin_data)
+active_portfolio <- read_excel(path = erin_data, sheet = "Complete Protfolio-ACTIVE") %>%
+  clean_names() %>%
+  mutate(name = paste(last_name, first_name, sep = ", ")) %>%
+  select(name, date_received, date_ip_letter_sent, date_of_follow_up_contact, 
+         date_additional_paperwork_received, date_of_final_decision, 
+         partial_accommodation_add_1, full_accommodation_add_1) 
+
+# I filter down the data to only include interactive process requests. 
+
+ip <- active_portfolio %>%
+  filter(!is.na(date_ip_letter_sent)) %>%
+  mutate(year = year(date_received)) %>%
+  mutate(month = month(date_received)) %>% 
+  group_by(year, month) %>%
+  summarize(total = n(), .groups = "drop") %>%
+  mutate(date = make_date(year, month))
+
+ggplot(ip, aes(x = date, y = total)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  labs(title = "Change in number of interactive process requests",
+       x = "Month",
+       y = "Number of interactive process requests")
+
+# I filter down the data to only include interactive process requests 
+# that received some form of response.
+
+ip_respond <- active_portfolio %>%
+  filter(!is.na(date_ip_letter_sent)) %>%
+  filter(!is.na(date_of_follow_up_contact) | 
+         !is.na(date_additional_paperwork_received) |
+         !is.na(date_of_final_decision)) %>%
+  mutate(year = year(date_received)) %>%
+  mutate(month = month(date_received)) %>% 
+  group_by(year, month) %>%
+  summarize(responded = n(), .groups = "drop") %>%
+  mutate(date = make_date(year, month)) 
+
+ggplot(ip_respond, aes(x = date, y = responded)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  labs(title = "Change in number of interactive process requests that had either \n a follow-up contact, additional paperwork received, or a final decision made",
+       x = "Month",
+       y = "Number of interactive process requests")
+
+# I filter down the data to only include interactive process requests 
+# that received some form of response AND some form of accommodation.
+
+ip_respond_acc <- active_portfolio %>%
+  filter(!is.na(date_ip_letter_sent)) %>%
+  filter(!is.na(date_of_follow_up_contact) | 
+         !is.na(date_additional_paperwork_received) |
+         !is.na(date_of_final_decision)) %>%
+  filter(!is.na(partial_accommodation_add_1) | 
+         !is.na(full_accommodation_add_1)) %>%
+  mutate(year = year(date_received)) %>%
+  mutate(month = month(date_received)) %>% 
+  group_by(year, month) %>%
+  summarize(accommodated = n(), .groups = "drop") %>%
+  mutate(date = make_date(year, month)) 
+
+ggplot(ip_respond_acc, aes(x = date, y = accommodated)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  labs(title = "Change in number of interactive process requests that receive \nfollow-up and accommodation",
+       subtitle = "A response can be either a follow-up contact, additional paperwork received, or final decision made.\nAn accommodation can be either partial or full accommodation.",
+       x = "Month",
+       y = "Number of interactive process requests")
+
+# I create a tibble showing the percentage of IP requests that received 
+# some form of response.
+
+respond_rate <- left_join(ip, ip_respond, by = c("year", "month", "date")) %>%
+  mutate(percent = responded/total * 100) %>%
+  select(date, responded, total, percent)
+
+ggplot(respond_rate, aes(x = date, y = percent)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  ylim(0, 100) +
+  labs(title = "Change in percentage of interactive process requests that received a response",
+       subtitle = "A response can be either a follow-up contact, additional paperwork received, or final decision made.",
+       x = "Month",
+       y = "% of IP requests that received a response")
+
+# I create a tibble showing the percentage of IP requests that received 
+# some form of response AND some form of accommodation.
+
+accommodation_rate <- left_join(ip, ip_respond_acc, by = c("year", "month", "date")) %>%
+  mutate(percent = accommodated/total * 100) %>%
+  select(date, accommodated, total, percent)
+
+ggplot(accommodation_rate, aes(x = date, y = percent)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  ylim(0, 100) +
+  labs(title = "Change in percentage of interactive process requests that received accommodation",
+       subtitle = "An accommodation can be either partial or full accommodation.",
+       x = "Month",
+       y = "% of IP requests that received accommodation")
+
+accommodation_rate_2 <- left_join(ip_respond, ip_respond_acc, by = c("year", "month", "date")) %>%
+  left_join(ip, by = c("year", "month", "date")) %>%
+  mutate(percent_acc_resp = accommodated/responded * 100) %>%
+  select(date, accommodated, responded, total, percent_acc_resp)
+
+ggplot(accommodation_rate_2, aes(x = date)) + 
+  geom_point(aes(y = responded), color = "pink") +
+  geom_smooth(aes(y = responded), method = "loess", color = "red") +
+  geom_point(aes(y = accommodated), color = "lightblue") +
+  geom_smooth(aes(y = accommodated), method = "loess", color = "blue") +
+  geom_point(aes(y = total), color = "lightgreen") +
+  geom_smooth(aes(y = total), method = "loess", color = "green") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  labs(title = "Change in number of interactive process requests over time",
+       subtitle = "A response can be either a follow-up contact, additional paperwork received, or final decision made.\nAn accommodation can be either partial or full accommodation.",
+       x = "Time (by month)",
+       y = "Number of interactive process requests")
+
+
+ggplot(accommodation_rate_2, aes(x = date, y = percent_acc_resp)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylim(0, 100) +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  labs(title = "Change in percentage of interactive process requests w/ response \nthat received accommodation",
+       subtitle = "An accommodation can be either partial or full accommodation.",
+       x = "Month",
+       y = "% of IP requests w/ response that received accommodation")
+```

@@ -1,0 +1,141 @@
+---
+title: "Clean Garcia Related Cases"
+author: "Monica Chang"
+date: "6/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+library(openxlsx)
+```
+
+There are 179 unique GBLS cases from 09/24/2020 to 06/25/2021 that may be
+Garcia-related. There are 19 Garcia-related cases, 121 shelter access cases, 
+8 shelter termination cases, and 46 other shelter cases. Some cases are 
+flagged for more than one category.
+
+```{r classify cases}
+
+# If you want to process another LegalServer export in the same way, just 
+# replace the input file below (e.g. raw_data/Garcia_Related...).
+
+garcia_cases <- read_excel("raw_data/Garcia_Related_Possibly__09_24_2020__06_25_2021.xlsx") %>%
+  slice(1:179) %>%
+  clean_names()
+
+clean <- garcia_cases %>%
+  mutate(slpc = special_legal_problem_code) %>%
+  separate(special_legal_problem_code, into = c("problem_1", "problem_2", "problem_3"), sep = "\\,", fill = 'right') %>%
+  mutate(problem_2 = trimws(problem_2, which = c("left")),
+         problem_3 = trimws(problem_3, which = c("left"))) %>%
+  mutate(garcia_related = if_else(problem_1 == "Garcia Related" | 
+                                  problem_2 == "Garcia Related" |
+                                  problem_3 == "Garcia Related", "Yes", "No")) %>%
+  mutate(shelter_access = if_else(problem_1 == "Shelter Access" | 
+                                  problem_2 == "Shelter Access" |
+                                  problem_3 == "Shelter Access", "Yes", "No")) %>%
+  mutate(shelter_termination = if_else(problem_1 == "Shelter Termination" | 
+                                  problem_2 == "Shelter Termination" |
+                                  problem_3 == "Shelter Termination", "Yes", "No")) %>%
+  mutate(shelter_other = if_else(problem_1 == "Shelter Other" | 
+                                  problem_2 == "Shelter Other" |
+                                  problem_3 == "Shelter Other", "Yes", "No")) %>%
+  mutate(intake_date = as.Date(intake_date, "%m/%d/%Y"),
+         date_closed = as.Date(date_closed, "%m/%d/%Y"),
+         ada = NA,
+         geography = NA,
+         access = NA,
+         noncompliance_termination = NA,
+         person_reviewing = NA,
+         date_of_review = NA,
+         additional_notes_questions = NA) %>%
+  rename(close_notes = case_close_notes_notes) %>%
+  select(slpc, garcia_related, shelter_access, shelter_termination, shelter_other, 
+         intake_date:close_notes,close_notes, 
+         ada, access, geography, noncompliance_termination, person_reviewing,
+         date_of_review, additional_notes_questions) %>%
+  arrange(desc(intake_date)) %>%
+  arrange(garcia_related)
+
+  # mutate(ada = if_else(!is.na(person_reviewing) & ada == "x", "Y", ada)) %>%
+  # mutate(ada = if_else(!is.na(person_reviewing) & is.na(ada), "N", ada)) %>%
+  # mutate(geography = if_else(!is.na(person_reviewing) & geography == "x", "Y", geography)) %>%
+  # mutate(geography = if_else(!is.na(person_reviewing) & is.na(geography), "N", geography)) %>%
+  # mutate(access = if_else(!is.na(person_reviewing) & access == "x", "Y", access)) %>%
+  # mutate(access = if_else(!is.na(person_reviewing) & is.na(access), "N", access)) %>%
+  # mutate(noncompliance_termination = NA,
+  #        conditions = NA) %>%
+  # rename(additional_notes_questions = additional_notes_questions_16) %>%
+  
+count(clean, garcia_related) # 19 cases
+count(clean, shelter_access) # 121 cases
+count(clean, shelter_termination) # 8 cases
+count(clean, shelter_other) # 46 cases
+
+write.xlsx(clean, 
+           file = "processed_data/legalserver_export/Clean_Garcia_Related_Cases.xlsx",
+           sheetName = "All Cases",
+           overwrite = TRUE)
+```
+
+```{r count number of cases per advocate}
+clean %>%
+  group_by(primary_advocate) %>%
+  summarize(n = n()) %>%
+  arrange(desc(n))
+```
+
+```{r create tibbles for each advocate}
+# Each advocate's tibble is sorted by most recent intake date and 
+# Garcia-related tag.
+
+# I created one tibble for every advocate that is not Adam, Laticia, or Linda.
+
+linda_garcia <- clean %>%
+  filter(primary_advocate == "Garcia, Linda") %>%
+  arrange(desc(intake_date)) %>%
+  arrange(garcia_related)
+
+laticia_walker_simpson <- clean %>%
+  filter(primary_advocate == "Walker-Simpson, Laticia") %>%
+  arrange(desc(intake_date)) %>%
+  arrange(garcia_related)
+
+adam_hoole <- clean %>%
+  filter(primary_advocate == "Hoole, Adam") %>%
+  arrange(desc(intake_date)) %>%
+  arrange(garcia_related)
+
+other_advocates <- clean %>%
+  filter(primary_advocate != "Garcia, Linda" & 
+         primary_advocate != "Walker-Simpson, Laticia" &  
+         primary_advocate != "Hoole, Adam") %>%
+  arrange(desc(intake_date)) %>%
+  arrange(garcia_related) 
+
+write.xlsx(linda_garcia, 
+           file = "processed_data/legalserver_export/Linda_Garcia_Garcia_Related_Cases.xlsx",
+           overwrite = TRUE)
+write.xlsx(laticia_walker_simpson, 
+           file = "processed_data/legalserver_export/Laticia_Walker_Simpson_Garcia_Related_Cases.xlsx",
+           overwrite = TRUE)
+write.xlsx(adam_hoole, 
+           file = "processed_data/legalserver_export/Adam_Hoole_Garcia_Related_Cases.xlsx",
+           overwrite = TRUE)
+write.xlsx(other_advocates, 
+           file = "processed_data/legalserver_export/Other_Advocates_Garcia_Related_Cases.xlsx",
+           overwrite = TRUE)
+```

@@ -1,0 +1,122 @@
+---
+title: "Triage/Enrollment Comparison"
+author: "Monica Chang"
+date: "6/10/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+```
+
+```{r compare triage and enrollment dates}
+
+triage_data <- read_excel("raw_data/20200408_EA_Triage TPs_DHCD6_511141.xlsx") %>%
+  clean_names() %>%
+  rename(pei = ea_triage_participant_enterprise_identifier,
+         date_triage = date_taken_141) %>%
+  
+  # Eliminate hyphens from the PEI identification number.
+    
+  mutate(pei = gsub("-", "", pei)) %>%
+  select(pei, date_triage)
+
+# There are 13,328 unique PEIs in the triage dataset.
+
+length(unique(triage_data$pei))
+
+enrollment_data <- read_excel("raw_data/20200408_Enrollment_DHCD6_511246.xlsx") %>%
+  clean_names() %>%
+  rename(pei = personal_id,
+         date_enrollment = entry_date) %>%
+  
+  # Eliminate hyphens from the PEI identification number.
+    
+  mutate(pei = gsub("-", "", pei)) %>%
+  
+  # I filter the enrollment dataset to match the date range of the triage 
+  # dataset.
+  
+  filter(date_enrollment >= as.Date("2018-07-02") & date_enrollment <= as.Date("2019-12-13")) %>%
+  select(pei, date_enrollment)
+
+# There are 15,577 unique PEIs in the enrollment dataset.
+
+length(unique(enrollment_data$pei))
+
+# I use a left_join to keep all the rows from the enrollment data and include
+# all matching triage dates.
+
+triage_enrollment <- left_join(enrollment_data, triage_data, by = "pei") %>%
+  
+  # I create a new variable to track the days from enrollment to triage.
+  
+  mutate(days_btwn_triage_enrollment =  as.double(difftime(lubridate::ymd(date_triage),
+                                                           lubridate::ymd(date_enrollment),
+                                                           units = "days"))) %>%
+  
+  # I group by pei and date_enrollment so that only one date of triage (i.e. 
+  # the date of triage that is most immediately after the date of enrollment) 
+  # is the date of triage that is included.
+  
+  group_by(pei, date_enrollment) %>%
+  
+  # I create a new variable so that rows in which the date of enrollment occurs
+  # after the date of triage are not counted when I arrange by this column
+  # within each group.
+  
+  mutate(days_btwn_triage_enrollment_2 = if_else(days_btwn_triage_enrollment < 0, 10000, days_btwn_triage_enrollment)) %>%
+  
+  # I create a new variable to track which pei-date combos have a corresponding
+  # date of enrollment that is on or before the date of triage and within 10
+  # days of the date of triage.
+  
+  mutate(close = if_else(days_btwn_triage_enrollment >= 0 & days_btwn_triage_enrollment <= 10, 1, 0)) %>%
+  arrange(days_btwn_triage_enrollment_2) %>%
+  slice(1)
+
+# 4659/19432 of pei-date_enrollment rows have a corresponding triage date. 
+
+triage_enrollment_2 <- triage_enrollment %>%
+  filter(!is.na(days_btwn_triage_enrollment))
+
+# 2020/4659 of pei-date_enrollment rows have a corresponding triage date that
+# occurs AFTER the date of enrollment.
+
+triage_enrollment_3 <- triage_enrollment_2 %>%
+  filter(days_btwn_triage_enrollment >= 0)
+
+# 1473/2020 of pei-date_enrollment rows have a corresponding triage date that
+# occurs 0-10 days after the date of enrollment.
+
+triage_enrollment_4 <- triage_enrollment_3 %>%
+  filter(close == 1)
+
+ggplot(triage_enrollment_2, aes(x = days_btwn_triage_enrollment)) +
+  geom_histogram() +
+  labs(title = "Distribution of days from enrollment to triage from 07/02/2018 to 12/13/2019", 
+       subtitle = "There are 19432 unique enrollment requests (as defined by PEI & date of enrollment). \nOnly 4659 have a corresponding triage date under the same PEI within this date range. \nOnly 2020 have a corresponding triage date that occurs AFTER the date of enrollment. \nOnly 1473 have a corresponding triage date that occurs 0-10 days after the date of enrollment.",
+       x = "Days from enrollment to triage",
+       y = "Number of unique pei-date_enrollment requests")
+
+ggplot(triage_enrollment_2, aes(x = days_btwn_triage_enrollment)) +
+  geom_histogram() +
+  xlim(-50, 50) +
+  labs(title = "Distribution of days from enrollment to triage from 07/02/2018 to 12/13/2019", 
+       subtitle = "There are 19432 unique enrollment requests (as defined by PEI & date of enrollment). \nOnly 4659 have a corresponding triage date under the same PEI within this date range. \nOnly 2020 have a corresponding triage date that occurs AFTER the date of enrollment. \nOnly 1473 have a corresponding triage date that occurs 0-10 days after the date of enrollment.",
+       x = "Days from enrollment to triage",
+       y = "Number of unique pei-date_enrollment requests")
+
+# Based on the distribution, it appears more likely that triage occurs before
+# enrollment. 
+
+```

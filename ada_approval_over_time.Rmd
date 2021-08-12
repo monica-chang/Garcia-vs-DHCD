@@ -1,0 +1,96 @@
+---
+title: "ADA Approval Over Time"
+author: "Monica Chang"
+date: "4/16/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+```
+
+```{r approved requests over time}
+
+# I write a function that converts NaN to 0.
+
+fix_nan <- function(x){
+    x[is.nan(x)] <- 0
+    x
+}
+
+all_adas <- read_csv("/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/all_adas.csv")
+
+# I create a tibble that contains the number of requests that were approved, 
+# not approved, and the percentage approved for each accommodation type and month.
+
+breakdown_by_time_acc <- all_adas %>%
+  mutate(year = year(date_received)) %>%
+  mutate(month = month(date_received)) %>% 
+  
+  # I can add this filter if I want to view these plots by accommodation type.
+  
+  # filter(req_placement_unit_close_to_service_providers == 1) %>%
+
+  group_by(approved, year, month) %>%
+  summarize(total_requests = n(), .groups = "drop") %>%
+  pivot_wider(names_from = approved, values_from = total_requests) %>%
+  mutate(date = make_date(year, month)) %>%
+  clean_names() %>%
+  mutate(total = yes + no) %>%
+  mutate(percent = yes/(yes + no) * 100) %>%
+  filter(!is.na(total))
+
+# I create a plot showing the change in approval rate over time.
+
+ggplot(breakdown_by_time_acc, aes(x = date, y = percent)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylim(0, 100) +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  scale_color_discrete(name = "Accommodation Type") +
+  labs(title = "Change in ADA approval rate (2015-2019)",
+       x = "Time (by month)",
+       y = "Percentage of requests approved")
+
+# I create a plot showing the change in total requests over time.
+
+ggplot(breakdown_by_time_acc, aes(x = date)) + 
+  geom_point(aes(y = total), color = "lightblue") +
+  geom_point(aes(y = yes), color = "pink") +
+  geom_smooth(aes(y = total), method = "loess", color = "blue") +
+  geom_smooth(aes(y = yes), method = "loess", color = "red") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  scale_color_discrete(name = "Accommodation Type") +
+  labs(title = "Change in number of ADA requests vs. \nchange in number of approved ADA requests (2015-2019)",
+       subtitle = "Change in number of requests is shown in blue. \n Change in approved requests is shown in red.",
+       x = "Time (by month)",
+       y = "Number of requests")
+
+# I create a plot showing the change in approved requests over time.
+
+ggplot(breakdown_by_time_acc, aes(x = date, y = yes)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  ylim(0, 100) +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  scale_color_discrete(name = "Accommodation Type") +
+  labs(title = "Change in number of approved requests (2015-2019)",
+       x = "Month",
+       y = "Number of approved requests")
+
+```

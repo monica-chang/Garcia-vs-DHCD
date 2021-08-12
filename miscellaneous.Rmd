@@ -1,0 +1,136 @@
+---
+title: "Miscellaneous"
+author: "Monica Chang"
+date: "8/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+```
+
+```{r generating misc spreadsheets as requested}
+
+all_adas <- read_csv("/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/all_adas.csv")
+approved_adas_complete <- read_csv("/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/approved_adas_complete.csv")
+unit_type_ada_transfers <- read_csv("/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/unit_type_ada_transfers.csv")
+transfers_chars_hotel_t <- read_csv("/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/transfers_chars_hotel_t.csv")
+
+# Generate a spreadsheet of requests that include a service provider acc.
+
+service_provider_requests <- approved_adas_complete %>%
+  filter(req_placement_unit_close_to_service_providers == 1) %>%
+  select(pei:how_acc_met, reason_physical_health:reason_other) %>%
+  arrange(desc(date_received)) %>%
+  mutate(zipcode_of_provider = NA,
+         distance_from_provider_required = NA,
+         type_of_provider = NA,
+         misc_notes = NA)
+
+write_csv(service_provider_requests, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/service_provider_requests.csv")
+
+# Generate a spreadsheet of approved ADAs who have "NA" for date_received.
+
+approved_adas_na_date <- approved_adas_complete %>%
+  filter(is.na(date_received))
+
+write_csv(approved_adas_na_date, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/approved_adas_na_date.csv")
+
+# Generate a spreadsheet of people who underwent a ton of transfers (10+). 
+# that may require follow-up for Laura.
+
+ada_many_transfers <- unit_type_ada_transfers %>%
+  group_by(pei, name) %>%
+  summarize(num_transfers = n(), .groups = "keep") %>%
+  arrange(desc(num_transfers)) %>%
+  filter(num_transfers > 5)
+
+write_csv(ada_many_transfers, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/approved_adas_many_tranfers.csv")
+
+# Generate a spreadsheet of people who have a ADA date_acc_met column filled out
+# and require a transfer (service providers, scattered site, first floor, 
+# wheelchair, bedrooms).
+
+ada_date_acc_met_filled <- approved_adas_complete %>%
+  filter(!is.na(date_acc_met)) %>%
+  filter(req_placement_unit_close_to_service_providers == 1 |
+         req_scattered_site_placement_unit_co_housing_unit == 1 |
+         req_first_floor_or_elevator_access == 1 |
+         req_wheelchair_accessible_placement_unit == 1 |
+         req_additional_bedrooms == 1) %>%
+  arrange(desc(date_received)) %>%
+  select(pei, name)
+
+ada_date_acc_met_filled_sample <- ada_date_acc_met_filled %>%
+  sample_n(50) %>%
+  select(pei, name)
+
+write_csv(ada_date_acc_met_filled, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/ada_date_acc_met_filled.csv")
+
+write_csv(ada_date_acc_met_filled_sample, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/ada_date_acc_met_filled_sample.csv")
+
+# I repeat the above except also merge in the transfer data for these individuals.
+
+ada_date_acc_met_filled_t <- 
+  left_join(ada_date_acc_met_filled, transfers_chars_hotel_t, by = c("pei", "name")) %>%
+  group_by(pei) %>%
+  distinct(transfer_location, .keep_all = TRUE) %>%
+  arrange(desc(date_received)) 
+
+ada_date_acc_met_filled_sample_t <- 
+  left_join(ada_date_acc_met_filled_sample, transfers_chars_hotel_t, by = c("pei", "name")) %>%
+  group_by(pei) %>%
+  distinct(transfer_location, .keep_all = TRUE) %>%
+  arrange(desc(date_received)) 
+
+write_csv(ada_date_acc_met_filled_t, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/ada_date_acc_met_filled_t.csv")
+
+write_csv(ada_date_acc_met_filled_sample_t, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/ada_date_acc_met_filled_sample_t.csv")
+
+# Generate a spreadsheet of date_approved, date of internal & external transfers
+# for relevant PEIs for Dan.
+
+ada_no_transfers <- read_excel("raw_data/ada_no_transfer.xlsx") %>%
+  clean_names() %>%
+  mutate(pei = gsub("-", "", pei))
+
+ada_no_transfers_supplemented <- 
+  left_join(ada_no_transfers, transfers_chars_hotel_t, by = c("pei", "name")) %>% 
+  select(pei:days_until_accommodation_met, transfer_type:transfer_location) %>%
+  group_by(pei) %>%
+  distinct(transfer_location, .keep_all = TRUE)
+
+write_csv(ada_no_transfers_supplemented, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/ada_no_transfers_supplemented.csv")
+
+# Generate spreadsheet of transfer locations without zipcodes.
+
+transfer_locations_without_zips <- transfers_chars_hotel_t %>%
+  filter(str_length(zipcode_of_transfer) < 5) %>% 
+  select(transfer_type, transfer_type_specific, transfer_location) %>%
+  distinct() %>%
+  arrange(transfer_type_specific, transfer_location)
+
+write_csv(transfer_locations_without_zips, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/miscellaneous/transfer_locations_without_zips.csv")
+
+```

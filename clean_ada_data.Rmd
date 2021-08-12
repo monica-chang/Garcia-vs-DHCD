@@ -1,0 +1,367 @@
+---
+title: "Cleaning 2018 & 2020 ADA Request Data"
+author: "Monica Chang"
+date: "3/26/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+```
+
+```{r clean 2018 and 2020 data}
+
+# I filter the 2018 and 2020 data so that they have consistent columns.
+
+ada_request_2018 <- read_excel("raw_data/2018_ADA_Requests.xlsx") %>%
+  
+  # Clean column names, drop unnecessary columns and correct one column name.
+  
+  clean_names() %>%
+  select(-c("touch_point_name_111")) %>%
+  rename(if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223 = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_w,
+         name = ada_request_data_name) 
+  
+
+ada_request_2020 <- read_excel("raw_data/2020_ADA_Requests.xlsx") %>%
+  
+  # Clean column names, drop unnecessary columns and correct column order.
+  
+  clean_names() %>%
+  
+  # The 2020 data does not ask about hotels/motels or other accommodations, but
+  # we add them here for consistency with 2018 data.
+  
+  mutate(if_the_ada_request_occurred_in_the_hotel_motel_please_indicate = NA) %>%
+  mutate(if_other_ada_accomodation_requested_please_describe_3226 = NA) %>%
+  select(participant_enterprise_identifier, 
+         name,
+         date_taken_111, 
+         where_did_the_ada_request_occur_3211,
+         if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223, 
+         if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
+         date_that_the_central_ada_coordinator_received_ada_request_3212,
+         ada_accommodation_request_3213,
+         if_other_ada_accomodation_requested_please_describe_3226,
+         reason_for_the_ada_request_3214,
+         if_other_reason_please_describe_3227,
+         date_the_decision_made_3215,
+         was_the_ada_request_approved_3216,
+         if_partial_please_explain_3217,
+         if_closed_please_explain_3219,
+         was_the_accommodations_met_3218,
+         how_was_the_accommodation_met_3221,
+         date_the_accommodation_met_3220) 
+
+# Takes in a ADA request tibble that has already been filtered to the 
+# correct columns. This function renames columns, eliminates 
+# hyphens from the pei, eliminates duplicate rows, and pivots the data 
+# so that each row represents a unique accommodation request made (i.e.
+# if someone requested 3 different accommodations on one day, they would
+# appear as 3 different rows). This will allow me to manually go through and
+# account for partial approvals.
+
+clean_ada_request <- function(x) {
+  x <- x %>%
+    
+    # Rename columns.
+    
+    rename(pei = participant_enterprise_identifier,
+           date_received = date_that_the_central_ada_coordinator_received_ada_request_3212,
+           date_decision = date_the_decision_made_3215,
+           date_taken = date_taken_111,
+           date_acc_met = date_the_accommodation_met_3220,
+           req_where = where_did_the_ada_request_occur_3211,
+           shelter_from = if_the_ada_request_occurred_in_the_ea_shelter_please_indicate_which_agency_3223,
+           hotel_from = if_the_ada_request_occurred_in_the_hotel_motel_please_indicate,
+           acc_type = ada_accommodation_request_3213,
+           other_acc_type = if_other_ada_accomodation_requested_please_describe_3226,
+           request_reason = reason_for_the_ada_request_3214,
+           other_request_reason = if_other_reason_please_describe_3227,
+           approved = was_the_ada_request_approved_3216,
+           partial = if_partial_please_explain_3217,
+           closed = if_closed_please_explain_3219,
+           acc_met = was_the_accommodations_met_3218,
+           how_acc_met = how_was_the_accommodation_met_3221) %>%
+    
+    # Eliminate hyphens from the PEI identification number.
+    
+    mutate(pei = gsub("-", "", pei)) %>%
+    
+    # Eliminate duplicate rows.
+    
+    distinct() %>%
+    
+    # No more than 4 accommodations are provided to any one row. So, I divide the
+    # request column into five columns, based on the "\\|" divider. Missing 
+    # values are filled on the right.
+    
+    separate(acc_type, into = c("a", "b", "c", "d", "e"), sep = "\\|", fill = 'right') %>%
+    
+    # I want to collapse these four columns into "tidy" format, where each row
+    # represents a unique request made. So, I pivot the data to make it longer.
+    
+    pivot_longer(cols = c(a, b, c, d, e), 
+                 names_to = "letter_id",  
+                 values_to = "request_type") %>%
+    
+    # If any of the columns c(a, b, c, d, e) were empty before I pivoted longer, 
+    # an "NA" value will appear. Additionally, I notice that some cells seem to
+    # just contain an empty space (likely due to data entry errors). So, I drop
+    # the NAs and remove the cells that are just empty spaces.
+    
+    drop_na(request_type) %>%
+    filter(request_type != "") %>%
+    
+    # I rename certain accommodation request types to ensure that 2018 and
+    # 2020 data follow similar conventions.
+    
+    mutate(request_type = recode(request_type, 
+                                 `Comfort Animal within Placement Unit` = "Assistance Animal within Placement Unit",
+                                 `Scattered Site Placement Unit` = "Scattered Site Placement Unit / Co-housing Unit",
+                                 `Placement Unit Close to Service Providers (when a participant is placed out of area away from their current medical providers)` = "Placement Unit Close to Service Providers",
+                                 `Physical Modification to Placement Unit (visual cues for hearing impaired, grab bars in shower, etc.)` = "Physical Modification to Placement Unit")) %>%
+  
+    # I rename certain accommodation request reasons to ensure that 2018 and
+    # 2020 data follow similar conventions.
+    
+    mutate_if(is.character, str_replace_all, pattern = "Developmental Disability / Behavioral", replacement = "Developmental Disability") %>%
+    mutate_if(is.character, str_replace_all, pattern = "Developmental Disability", replacement = "Developmental Disability / Behavioral") %>%
+    mutate_if(is.character, str_replace_all, pattern = "Mental / Emotional Health", replacement = "Mental Health") %>%
+    
+    # I separate request_reason into multiple columns to account for individuals
+    # that requested accommodations for more than one reason.
+    
+    separate(request_reason, into = c("reason_1", "reason_2", "reason_3", "reason_4"), sep = "\\|", fill = 'right') %>%
+    
+    # I create a variable calculating the days it takes for each unique ADA
+    # request to be met - based on the date_received and data_acc_met columns.
+
+    mutate(days_until_accommodation_met = as.double(difftime(lubridate::ymd(date_acc_met),
+                                                             lubridate::ymd(date_received),
+                                                             units = "days"))) %>%
+    
+    # Re-order columns and drop unnecessary columns.
+    
+    select(pei, name, date_received, date_decision, date_taken, date_acc_met, 
+           days_until_accommodation_met, request_type, reason_1:reason_4, 
+           req_where:how_acc_met) 
+
+  }
+
+ada_request_2018 <- clean_ada_request(ada_request_2018)
+ada_request_2020 <- clean_ada_request(ada_request_2020)
+
+# Combine the 2018 and 2020 touchpoint data.
+
+ada_request_2018_2020 <- bind_rows(ada_request_2018, ada_request_2020)
+write_csv(ada_request_2018_2020, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_unprocessed.csv")
+
+```
+
+```{r accounting for partial approvals and other categories}
+
+# After doing the above data cleaning, I manually went through the data to 
+# account for partial approvals that provided sufficient information to 
+# determine whether a unique accommodation request was approved or not. 
+# Note: 32 partial approvals did not provide sufficient  information to 
+# manually input approval data so they were not counted.
+
+# I also manually went through the "other" categories for request type and 
+# request reason to categorize frequently occurring answers (e.g. AC Unit,
+# additional bedrooms).
+
+col_types <- cols(
+  .default = col_character(),
+  date_received = col_datetime(format = ""),
+  date_decision = col_datetime(format = ""),
+  date_taken = col_datetime(format = ""),
+  date_acc_met = col_datetime(format = ""),
+  days_until_accommodation_met = col_double(),
+  partial = col_character(),
+  closed = col_logical()
+)
+
+# I pivot my processed data so that each row represents one request 
+# i.e. each row is uniquely identified by PEI + date_received.
+
+all_adas <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/ada_request_2018_2020_partials_processed.csv", col_types = col_types) %>%
+  mutate(approved = ifelse(approved != "Yes" | is.na(approved), "No", approved)) %>%
+  mutate(dummy = 1) %>%
+  
+  # I pivot my data wider. The names of the columns in my wider table 
+  # will be the values currently in the 'accommodation_request' column. 
+  # The values in those columns will be either 0 if the category is not
+  # relevant, or 1 if the category was requested in that case.
+  
+  pivot_wider(names_from = request_type, 
+              values_from = dummy,
+              names_prefix = "req_",
+              values_fill = 0) %>%
+  clean_names() %>%
+  
+  # I similarly pivot my data for request reasons.
+  
+  pivot_longer(cols = reason_1:reason_4, 
+               names_to = "reason_id", 
+               values_to = "request_reason", 
+               values_drop_na = TRUE) %>%
+  mutate(dummy = 1) %>%
+  pivot_wider(id_cols = pei:req_wheelchair_accessible_placement_unit, 
+              names_from = request_reason, 
+              values_from = dummy, 
+              names_prefix = "reason_",
+              values_fill = 0) %>%
+  clean_names() %>%
+  mutate(date_received = as.character(date_received)) %>%
+  mutate(date_received = as.POSIXct(date_received)) %>%
+  
+  # I create a variable to specify requests that contain unit type 
+  # accommodations that are of interest. We are interested in requests 
+  # for a service provider, scattered site, first floor, wheelchair accessible, 
+  # or additional bedrooms since these are the only kinds of requests that 
+  # cannot be met without a transfer. 
+  
+  # Unfortunately, we do not yet have provider zipcode information
+  # to evaluate whether service provider requests were met. We also do not
+  # have information about how many more bedrooms a location needs to
+  # evaluate whether additional bedroom requests were met. For now, we 
+  # exclude them from our analysis.
+  
+  mutate(interesting = ifelse(req_scattered_site_placement_unit_co_housing_unit == 1 |
+                              req_first_floor_or_elevator_access == 1 |
+                              req_wheelchair_accessible_placement_unit == 1, 1, 0)) %>%
+  
+  # I specify the column order that I want.
+  
+  select(pei:hotel_from, approved, acc_met, how_acc_met, interesting,
+         req_placement_unit_close_to_service_providers,
+         req_scattered_site_placement_unit_co_housing_unit,
+         req_other,
+         req_first_floor_or_elevator_access,
+         req_assistance_animal_within_placement_unit,
+         req_non_carpeted_placement_unit,
+         req_physical_modification_to_placement_unit,
+         req_access_to_full_cooking_facilities,
+         req_ac_unit,
+         req_wheelchair_accessible_placement_unit,
+         req_change_in_ea_regulation_re_housing_plan,
+         req_additional_bedrooms,
+         req_assigned_caretaker_temporary_non_ea_household_member,
+         reason_physical_health:reason_other)
+
+write_csv(all_adas, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/all_adas.csv")
+
+```
+
+```{r adding zipcodes and fixing dates}
+
+# boston_zips = c("02101", "02108", "02109", "02110", "02111", "02112", "02113", 
+#                "02114", "02115", "02116", "02117", "02118", "02119", "02120", 
+#                "02121", "02122", "02123", "02124", "02125", "02126", "02127", 
+#                "02128", "02129", "02130", "02131", "02132", "02133", "02134", 
+#                "02135", "02136", "02137", "02141", "02149", "02150", "02151",
+#                "02152", "02163", "02171", "02196", "02199", "02201", "02203", 
+#                "02204", "02205", "02206", "02210", "02211", "02212", "02215", 
+#                "02217", "02222", "02228", "02241", "02266", "02283", "02284", 
+#                "02293", "02297", "02298", "02445", "02467")
+
+# random_zips <- rep_sample_n(as_tibble(boston_zips), 1, replace = TRUE, reps = 2108)
+
+# Only 57/1213 zipcodes of providers were provided. 
+# 13 completely new individuals were added in. 44 individuals had their 
+# zipcodes added in.
+
+service_provider_zipcodes <- read_excel("processed_data/ADA_Geography.xlsx") %>%
+  clean_names() %>%
+  mutate_if(is.character, ~na_if(., "N/A")) %>%
+  mutate_if(is.character, ~na_if(., "NA")) %>%
+  rename(pei = pei_personal_enterprise_identifier) %>%
+  mutate(date_received = as.Date(date_received)) %>%
+  mutate(zipcode_of_provider = if_else(substr(zipcode_of_provider, 1, 1) == "/", 
+                                       substr(zipcode_of_provider, 2, 6), 
+                                       zipcode_of_provider)) %>%
+  filter(!is.na(pei)) %>%
+  select(pei, name, date_received, zipcode_of_provider:misc_notes)
+
+# Filter the data to only count approved requests. 
+# 2108/3638 requests are approved. We assume DHCD correctly approves requests.
+
+# Note: 1847/2108 PEIs only show up once. Some individuals have submitted 
+# multiple approved requests.
+
+approved_adas_complete <- 
+  left_join(all_adas, service_provider_zipcodes, by = c("pei", "name", "date_received")) %>%
+  filter(approved == "Yes") %>%
+  select(-approved) %>%
+  
+  # I change the date columns to be in date format to make them more 
+  # understandable in my Shiny app.
+  
+  mutate(date_acc_met = as.Date(date_acc_met)) %>%
+  mutate(date_received = as.Date(date_received)) %>%
+  mutate(date_taken = as.Date(date_taken)) %>%
+  mutate(date_decision = as.Date(date_decision))
+  
+# Save this tibble as a compressed RDS file to be used in the Shiny app.
+
+saveRDS(approved_adas_complete, file = "shiny/data/approved_adas.rds")
+write_csv(approved_adas_complete, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/approved_adas_complete.csv")
+
+```
+
+```{r merge race with existing ADA dataset}
+
+# Data go from 02-11-2011 to 01-09-2020
+
+race_info <- read_excel("raw_data/20200408_Client_DHCD6_511242.xlsx") %>%
+  clean_names() %>%
+  rename(pei = personal_id) %>%
+  
+  # I eliminate rows where there is no race information for the client.
+  # This brings us from 25,506 entries to 23,316 entries.
+  
+  filter(is.na(race_none)) %>%
+  select(pei, dob, am_ind_ak_native:race_none, ethnicity:gender)
+
+# 2,444/3,638 rows have race information.
+
+adas_race <- left_join(all_adas, race_info, by = "pei") 
+
+adas_race_2 <- adas_race %>%
+  filter(!is.na(white)) %>%
+  mutate(am_ind_ak_native = sum(am_ind_ak_native)) %>%
+  mutate(asian = sum(asian)) %>%
+  mutate(black_af_american = sum(black_af_american)) %>%
+  mutate(native_hi_other_pacific = sum(native_hi_other_pacific)) %>%
+  mutate(white = sum(white)) %>%
+  select(am_ind_ak_native: white) %>%
+  head(1) %>%
+  pivot_longer(cols = am_ind_ak_native: white, 
+               names_to = "race", 
+               values_to = "num_requests", 
+               values_drop_na = TRUE) 
+  
+ggplot(data = adas_race_2, mapping = aes(x = race, y = num_requests)) +
+  geom_col() +
+  labs(title = "Racial breakdown of ADA requests",
+       subtitle = "32.82% of race values are missing.",
+       x = "Race",
+       y = "Number of ADA requests")
+
+```

@@ -1,0 +1,646 @@
+---
+title: "ADA Analysis"
+author: "Monica Chang"
+date: "9/25/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+```
+
+
+```{r clean bed registry/shelter characteristics data}
+
+# I clean the data on shelter characteristics to select relevant columns. 
+# This tibble provides information on whether each location meets certain 
+# unit_type accommodations (scattered site, bedrooms, first floor, elevator,
+# visual/hearing impairment, AC, carpeting, wheelchair accessible).
+
+# Externally, there are 156 hotel placements & 1692 non-hotel placements.
+# Internally, there are 1295 entity_to transfers.
+# 26 transfers are NA - there is no information on transfer_type provided.
+
+# Note: This information cannot address hotel placements or the following types
+# of accommodations: 
+# req_placement_unit_close_to_service_providers (1201), 
+# req_other (212)
+# req_assistance_animal_within_placement_unit (151) 
+# req_access_to_full_cooking_facilities (42)
+# req_change_in_ea_regulation_re_housing_plan (27)
+# req_assigned_caretaker_temporary_non_ea_household_member (5) 
+
+shelter_characteristics <- read_excel("raw_data/DHCD6_126075.xlsx") %>%
+  clean_names() %>% 
+  
+  # I replace the values in the accommodation columns to display 1 when the
+  # accommodation exists and 0 when the accommodation does not exist.
+  
+  mutate_at(vars(visually_impaired:public_transportation_accessible), ~ifelse(. == "Yes", 1, 0)) %>%
+  
+  # I replace the values in the unit_type column to display 1 when the
+  # unit type is either a scattered site or co-shelter site, a 2 when the site 
+  # is a congregate shelter, and 0 when the unit_type information is not given.
+  
+  mutate_at(vars(unit_type), ~ifelse(. == "Scattered Sites" | . == 
+                                       "Co-Shelter", 1, ifelse(. == "Congregate", 2, 0))) %>%
+  mutate(ffloor_elevator = ifelse(floor == 1 | elevator == 1, 1, 0)) %>%
+  mutate(phys_mod = ifelse(visually_impaired == 1 | hearing_impaired == 1, 1, 0)) %>%
+  mutate(non_carpeted = ifelse(carpeting == 1, 0, 1)) %>%
+  select(name, site, program_name, city, zip_code, unit_type, bedrooms, floor, visually_impaired:public_transportation_accessible, ffloor_elevator, phys_mod, non_carpeted)
+  
+```
+
+
+```{r clean and merge transfer data}
+
+# I clean and merge the data on internal transfers (transfers within a program 
+# e.g. from Heading Home Congregate Shelter to a Heading Home Scattered Site) 
+# and external transfers (transfers from one site to another e.g. from Heading 
+# Home to JRI) by renaming appropriate columns, pivoting the data longer, 
+# and row binding.
+
+external_transfers <- read_excel("raw_data/combined_Referrals_EA_Placement_Unit.xlsx",
+           col_types = c("text", "text", "text", "text", "text", "text", "text", 
+                         "text", "date", "text", "date", "text", "text")) %>%
+  clean_names() %>%
+  rename(pei = participant_enterprise_identifier,
+         hotel_placement = site_to_program_name,
+         non_hotel_placement = entity_to,
+         date_referral = referral_date) %>%
+  mutate(pei = gsub("-", "", pei)) %>%
+  mutate(date_referral = ymd_hms(date_referral)) %>%
+  pivot_longer(cols = hotel_placement:non_hotel_placement, 
+               names_to = "transfer_type_specific", 
+               values_to = "transfer_location", 
+               values_drop_na = TRUE) %>%
+  mutate(transfer_type = "external") %>%
+  select(pei, transfer_type, transfer_type_specific, transfer_location, date_referral) %>%
+  arrange(date_referral) %>%
+  mutate(date_referral = ymd_hms(date_referral)) 
+   
+internal_transfers <- read_excel("raw_data/combined_EA_Providers_Internal_Transfers.xlsx",
+                                 col_types = c("text", "text", "text", "text", 
+                                               "text", "text", "text", "text", 
+                                               "date", "text", "text", "text")) %>%
+  clean_names() %>%
+  rename(pei = participant_enterprise_identifier,
+         date_referral = referral_date) %>%
+  mutate(pei = gsub("-", "", pei)) %>%
+  pivot_longer(cols = site_to:entity_to, 
+               names_to = "transfer_type_specific", 
+               values_to = "transfer_location", 
+               values_drop_na = TRUE) %>%
+  
+  # I filter out all internal transfers to stabilization units.
+  
+  filter(str_detect(transfer_location, regex("Stabilization", ignore_case = TRUE)) == FALSE) %>%
+  mutate(transfer_type = "internal") %>%
+  select(pei, transfer_type, transfer_type_specific, transfer_location, date_referral) %>%
+  arrange(date_referral) %>%
+  mutate(date_referral = ymd_hms(date_referral)) 
+
+transfers <- bind_rows(external_transfers, internal_transfers) %>%
+  arrange(date_referral)
+
+```
+
+
+```{r merge approved ADAs for unit accommodations and transfer location}
+
+approved_adas_complete <- read_csv("/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/approved_adas_complete.csv")
+
+# I use a left_join because I want to keep all of the rows from my approved_adas
+# tibble - even if there is no corresponding internal or external transfer. 
+
+unit_type_ada_transfers <- left_join(approved_adas_complete, transfers, by = "pei") %>% 
+  
+  # I eliminate duplicate rows. 6502/7435 rows remain.
+  
+  distinct() %>% 
+  
+  # I am only able to analyze whether requests were met for scattered site,
+  # first floor, and wheelchair accessible accommodations.
+  # 2797/6502 rows remain.
+  
+  filter(interesting == 1) %>% 
+  
+  # 110 approved requests have no date_received recorded.
+  # To impute these missing values, I calculate the the mean number of days 
+  # between when an ADA request was received and when a decision was made. 
+
+  mutate(days_btwn_decision_received = as.double(difftime(ymd(date_decision),
+                                                          ymd(date_received),
+                                                          units = "days"))) %>%
+  mutate(mean_days_btwn_decision_received = round(mean(days_btwn_decision_received, 
+                                                       na.rm = TRUE))) %>%
+  
+  # We will substitute NA date_received values with the date_decision +
+  # the mean of the difference between date_received and date_decision.
+  
+  mutate(date_received = ifelse(is.na(date_received), 
+                                date_decision - mean_days_btwn_decision_received,
+                                date_received)) %>%
+  
+  mutate(date_received = as.Date(as.POSIXct(date_received*24*60*60, origin = "1970-01-01", tz="UTC"))) %>%
+
+  # I filter out cases where the date of referral is before the date the 
+  # ADA application was received - because those referrals are not relevant to
+  # address the disability request. 1454/2797 rows remain.
+  
+  filter(date_received <= date_referral | is.na(date_referral) | is.na(date_received)) %>%
+  select(pei:date_received, date_decision:date_referral)
+
+write_csv(unit_type_ada_transfers, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/unit_type_ada_transfers.csv")
+```
+
+```{r merge approved ADAs for unit accommodations and characteristics of transfer location}
+
+# This function take in 3 arguments: 
+# - a tibble formatted like unit_type_ada_transfers or service_provider_ada_transfers
+# - a tibble formatted like shelter_characteristics
+# - a logical to indicate whether we assume a hotel successfully meets all 
+#   unit type accommodations
+# This function returns a merged tibble of transfers and shelter characteristics.
+
+transfers_include_chars <- function(transfers, chars, hotel = TRUE) {
+  
+  # I use a left join because I want to keep all of the rows from my ada_transfers
+  # tibble - even if there is no corresponding shelter characteristic information.
+  # This merge will allow me to see whether the location the individual was 
+  # transferred to meets that individual's disability accommodation request.
+  
+  left_join(transfers, chars, by = c("transfer_location" = "name")) %>% 
+  
+    # I coded acc_met as 
+    # - 1 if the individual had their unit type accommodations met
+    # - 0 if the individual had their unit type accommodations not met
+    # - NA if we had no characteristic info on the transfer location
+    
+    mutate(acc_met = ifelse(req_scattered_site_placement_unit_co_housing_unit <= unit_type &
+                                      req_first_floor_or_elevator_access <= ffloor_elevator &
+                                      req_wheelchair_accessible_placement_unit <= wheelchair_accessible, 1, 0)) %>%
+      
+    # I am able to account for non_hotel placement and entity_to transfers
+    # using my shelter characteristics dataset. Because I do not have information
+    # on the characteristics of hotels, I will run a scenario where a hotel meets 
+    # all unit type accommodations other than proximity to service providers 
+    # and a scenario where a hotel doesn't meet any.
+  
+    mutate(acc_met = ifelse(hotel == TRUE & transfer_type_specific == "hotel_placement", 1, 
+                               ifelse(hotel == TRUE & transfer_type_specific != "hotel_placement", acc_met,
+                               ifelse(hotel == FALSE & transfer_type_specific == "hotel_placement", 0, 
+                               ifelse(hotel == FALSE & transfer_type_specific != "hotel_placement", acc_met, acc_met))))) %>% 
+                                     
+    # In instances when a provider transfers a family from one of its programs to 
+    # another, there is a two-step process. First, the provider refers the family 
+    # to the new program. This will appear as a program_to transfer. Once the 
+    # provider accepts the referral, the provider places the family in the new 
+    # shelter unit. This appears as an entity_to transfer.
+    
+    # Since a program_to transfer is always followed by a more specific 
+    # entity_to transfer, I can filter program_to transfers out.
+    
+    filter(transfer_type_specific != "program_to") %>%
+    rename(zipcode_of_transfer = zip_code) %>%
+    select(pei:date_taken, date_referral, date_acc_met, 
+           days_until_accommodation_met, interesting, shelter_from, hotel_from,
+           req_placement_unit_close_to_service_providers:transfer_location, 
+           zipcode_of_transfer, acc_met)
+}
+
+# FUTURE TODO: Look at which shelters are associated with the longest delays.
+
+# Tibble generated when we make the assumption that a hotel transfer meets all
+# unit type accommodations. 1223 observations.
+
+transfers_chars_hotel_t <- transfers_include_chars(unit_type_ada_transfers, shelter_characteristics, hotel = TRUE)
+
+write_csv(transfers_chars_hotel_t, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/transfers_chars_hotel_t.csv")
+
+saveRDS(transfers_chars_hotel_t, file = "shiny/data/transfers_chars_hotel_t.rds")
+
+# Tibble generated when we make the assumption that a hotel transfer meets no
+# unit type accommodations. 1223 observations.
+
+transfers_chars_hotel_f <- transfers_include_chars(unit_type_ada_transfers, shelter_characteristics, hotel = FALSE)
+
+write_csv(transfers_chars_hotel_f, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/transfers_chars_hotel_f.csv")
+
+saveRDS(transfers_chars_hotel_f, file = "shiny/data/transfers_chars_hotel_f.rds")
+```
+
+```{r keep the earliest transfer after approval that satisfies the request}
+
+# Each individual can have multiple internal and external transfers as well as 
+# multiple ADA requests. Since we have no certain way of knowing which transfer 
+# met which ADA request - I will track whether the most recent request was met 
+# at each transfer. We are assuming that once the individual's needs are met 
+# once, the request was met. E.g. If request was met at transfer 5, that
+# date_referral is the new date_acc_met.
+
+# NOTE: This will be an undercount because someone could have repeated additive 
+# requests.
+
+# NOTE: In the future, DHCD should include info on the temporary/permanent 
+# nature of the need in their data collection. Mental health needs are probably 
+# not temporary. We may want to do more specific analysis on mental health.
+
+# This function takes in a tibble generated by transfer_include_chars. It
+# supplements the date_acc_met column with transfer data and filters the tibble
+# to only retain one row for each pei-date combo.
+
+supplement_date_acc_met <- function(df){
+  df %>%
+    
+    # Group the data by each unique pei-date_received combo.
+  
+    group_by(pei, date_received) %>%
+    
+    # Keep the earliest transfer that meets the need OR
+    # the earliest transfer that doesn't meet the need if the need is never met.
+    
+    arrange(desc(acc_met), date_referral) %>%
+    slice(1) %>%
+    
+    mutate(dhcd_data_exists = ifelse(!is.na(date_acc_met), 1, 0)) %>%
+    mutate(days_btwn_dhcd_referral = as.double(difftime(date_acc_met,
+                                                      date_referral,
+                                                      units = "days"))) %>%
+      
+    # If a date_acc_met value already exists, we keep it. 
+    
+    mutate(date_acc_met = ifelse(!is.na(date_acc_met), 
+                                 date_acc_met, 
+                                 
+                                 # Else, if the request was met by the transfer, 
+                                 # replace date_acc_met with date_referral.
+                                 # If the request was never met, set a 1-year
+                                 # censorship date. 
+                                 
+                                 ifelse(acc_met == 1, 
+                                        as.Date(date_referral), 
+                                        as.Date(date_received + 365)))) %>% 
+    
+    # I use strptime to convert my POSIXct object to an understandable datetime.
+    
+    mutate(date_acc_met = as.Date(as.POSIXct(date_acc_met*24*60*60, origin = "1970-01-01", tz="UTC"))) %>% 
+    
+    # I use format to make sure my dates follow the same conventions.
+    
+    mutate(date_received = as.Date(date_received)) %>%
+    mutate(date_acc_met = as.Date(date_acc_met)) %>% 
+    
+    # I create a variable calculating the days it takes for each unique ADA
+    # request to be met - based on the date_received and data_acc_met columns.
+    
+    mutate(days_until_accommodation_met = as.double(difftime(date_acc_met,
+                                                             date_received,
+                                                             units = "days")))
+}
+
+# For requests that ask for either scattered site, first floor, or wheelchair, 
+# I substitute missing date_acc_met values with transfer information and assume 
+# that hotel transfers meet all unit type accommodations. 609 rows.
+
+supplemented_unit_type_ada_transfers_t <- supplement_date_acc_met(transfers_chars_hotel_t) %>%
+  filter(days_until_accommodation_met >= 0) 
+
+write_csv(supplemented_unit_type_ada_transfers_t, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/supplemented_unit_type_ada_transfers_t.csv")
+
+saveRDS(supplemented_unit_type_ada_transfers_t, 
+        file = "shiny/data/supplemented_unit_type_ada_transfers_t.rds")
+
+# I filter the dataset to gauge how closely our substitution method matches 
+# what is provided by DHCD. 74/136 are within 1 day of the date_acc_met value
+# provided by the DHCD. 105/136 are within 1 week of the value provided by DHCD.
+
+supplemented_unit_type_ada_transfers_t %>%
+  filter(acc_met == 1) %>%
+  filter(dhcd_data_exists == 1) %>%
+  ggplot(aes(x = days_btwn_dhcd_referral)) + 
+    geom_histogram(aes(y = after_stat(count/sum(count))),
+                   alpha = 0.5, 
+                   bins = 100) +
+    labs(title = "Distribution of the difference b/w provided DHCD values \n and values inferred based on substitution method",
+           subtitle = "Substitutions are based on the most immediate referral after the request that met \n the unit-type disability accommodation (scattered site, wheelchair, first floor).",
+           x = "Difference b/w provided DHCD values and inferred values (days)",
+           y = "Probability")
+
+# For requests that ask for either service provider, scattered site, 
+# first floor, or wheelchair, I substitute all date_acc_met values with 
+# transfer information and assume that hotel transfers don't meet all unit type 
+# accommodations. 1204 rows.
+
+supplemented_unit_type_ada_transfers_f <- supplement_date_acc_met(transfers_chars_hotel_f) %>%
+  filter(days_until_accommodation_met >= 0)
+
+write_csv(supplemented_unit_type_ada_transfers_f, 
+          path = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/supplemented_unit_type_ada_transfers_f.csv")
+
+saveRDS(supplemented_unit_type_ada_transfers_f, 
+        file = "shiny/data/supplemented_unit_type_ada_transfers_f.rds")
+
+# FUTURE TODO: After we have a Kaplan-Meier plot that is more reliable, 
+# we may be able to have a binary question (was this request met within 30 days)
+# and identify a reasonable cut off date. Percentages are easier to understand.
+
+# FUTURE TODO: Clean & merge HUD exit data. 
+
+# FUTURE TODO: Is there demographic information for these individuals? 
+# Do they only track for head of household or each individual?
+
+```
+
+```{r plots showing delays in accommodation for approved ADAs}
+
+# This function creates a Kaplan-Meier plot showing the percentage of 
+# approved ADA requests met over time.
+         
+create_kaplan_meier <- function(df){
+  df %>%
+    filter(days_until_accommodation_met >= 0) %>% 
+    group_by(days_until_accommodation_met) %>%
+    summarize(num_requests_met = n(), .groups = "drop") %>%
+    mutate(prop_requests_met = num_requests_met/nrow(df)) %>%
+    mutate(cum_prop_requests = cumsum(prop_requests_met) * 100) %>%
+    ggplot(aes(x = days_until_accommodation_met, y = cum_prop_requests)) +
+      geom_line() + 
+      xlim(0, 400) +
+      ylim(0, 100) +
+      labs(title = "Percentage of requests that were met (2015-2019)", 
+           x = "Days until accommodation was met",
+           y = "Percentage of requests met")
+}
+
+# This creates a Kaplan-Meier plot that takes into account ALL approved ADA 
+# requests and only using the 2056 non-negative date_acc_met values provided by 
+# DHCD.
+
+# Note: 1484/2056 (70%) of the date_acc_met values are missing! 
+# We will need transfer/bed registry data to supplement these missing values.
+
+# Note: 52 requests have a negative # of days_until_accommodation_met which 
+# doesn't make sense. This analysis excludes these requests. 
+
+approved_adas_no_neg <- approved_adas_complete %>%
+  filter(days_until_accommodation_met >= 0 | is.na(days_until_accommodation_met))
+
+create_kaplan_meier(approved_adas_no_neg)
+
+# This creates a Kaplan-Meier plot that takes into account requests that 
+# ask for either scattered site, first floor, or wheelchair accessibility.
+# This uses the 837 date_acc_met values provided by DHCD.
+
+# Note: 676/837 (80%) of the date_acc_met values are missing! 
+# We will need transfer/bed registry data to supplement these missing values.
+
+interesting_approved_adas <- approved_adas_no_neg %>% 
+  filter(interesting == 1) 
+
+saveRDS(interesting_approved_adas, file = "shiny/data/interesting_approved_adas.rds")
+  
+create_kaplan_meier(interesting_approved_adas)
+
+# This creates a Kaplan-Meier plot that ONLY takes into account requests that 
+# ask for either scattered site, first floor, or wheelchair and substitutes 
+# missing date_acc_met values with transfer information (606 requests). 
+# The biggest unknown is whether service provider requests were met. 
+
+create_kaplan_meier(supplemented_unit_type_ada_transfers_t)
+create_kaplan_meier(supplemented_unit_type_ada_transfers_f)
+```
+
+```{r modeling delays in disability accommodation}
+fit_obj <- stan_glm(days_until_accommodation_met ~ 
+                      req_scattered_site_placement_unit_co_housing_unit,
+                    data = supplemented_unit_type_ada_transfers_t,
+                    refresh = 0,
+                    seed = 9)
+
+print(fit_obj, digits = 4, detail = FALSE)
+
+# I create a tibble to more easily extract the median values from stan_glm
+# and graph the posterior distributions.
+
+fit_obj_tbl <- as_tibble(fit_obj) %>%
+  rename(mu = `(Intercept)`,
+         predictor = req_scattered_site_placement_unit_co_housing_unit) %>%
+  mutate(mu_median = median(mu)) %>%
+  mutate(predictor_median = median(predictor))
+
+# I create a tibble to extract the median values from stan_glm.
+
+fit_obj_stats <- fit_obj_tbl %>%  
+  select(mu_median, predictor_median) %>%
+  slice(1)
+
+fit_obj_stats
+
+fit_obj_tbl %>% 
+  
+  # I add mu to the predictor column so that the posterior now
+  # represents the average wait time for individuals without the 
+  # specified predictor instead of the average change in wait time.
+  
+  mutate(predictor = predictor + mu) %>%
+  pivot_longer(cols = mu:predictor,
+               names_to = "parameter",
+               values_to = "wait_time") %>%
+  ggplot(aes(x = wait_time, fill = parameter)) +
+    
+    # I use overlapping histograms to display my two posterior distributions.
+  
+    geom_histogram(aes(y = after_stat(count/sum(count))),
+                   alpha = 0.5, 
+                   bins = 100, 
+                   position = "identity") +
+    
+    # I create a more descriptive legend title and labels.
+  
+    scale_fill_discrete(name = "Group", labels = c("Without Predictor", "With Predictor")) +
+  
+    # I add two dotted lines to more clearly show the median value for each 
+    # posterior distribution.
+  
+    geom_vline(xintercept = fit_obj_stats$mu_median, 
+               color = "red", 
+               lty = "dashed") +
+    geom_vline(xintercept = fit_obj_stats$predictor_median + fit_obj_stats$mu_median, 
+               color = "blue", 
+               lty = "dashed") +
+    labs(title = "Posterior probability distributions",
+         subtitle = "Predictive distributions of average wait time for individuals with and without the specified predictor",
+         x = "Average number of days until accommodation met",
+         y = "Probability")
+
+# TODO: Add geom_density_ridges plot to show how the posteriors for different 
+# types/reasons compare.
+
+```
+
+
+```{r calculating delays in accommodation for requests for proximity to service providers}
+
+# I first merge all approved ADA requests with all of the transfers that 
+# occurred after each of these requests were approved.
+
+service_provider_ada_transfers <- left_join(approved_adas_complete, transfers, by = "pei") %>% 
+  
+  # I eliminate duplicate rows. 6502/7435 rows remain.
+  
+  distinct() %>% 
+  
+  # I am only focusing on requests for proximity to service providers.
+  
+  filter(req_placement_unit_close_to_service_providers == 1) %>% 
+  
+  # 175 approved requests have no date_received recorded.
+  # To impute these missing values, I calculate the the mean number of days 
+  # between when an ADA request was received and when a decision was made. 
+
+  mutate(days_btwn_decision_received = as.double(difftime(ymd(date_decision),
+                                                          ymd(date_received),
+                                                          units = "days"))) %>%
+  mutate(mean_days_btwn_decision_received = round(mean(days_btwn_decision_received, 
+                                                       na.rm = TRUE))) %>%
+  
+  # We will substitute NA date_received values with the date_decision +
+  # the mean of the difference between date_received and date_decision.
+  
+  mutate(date_received = ifelse(is.na(date_received), 
+                                date_decision - mean_days_btwn_decision_received,
+                                date_received)) %>% 
+  
+  mutate(date_received = as.Date(as.POSIXct(date_received*24*60*60, origin = "1970-01-01", tz="UTC"))) %>% 
+  
+  # I filter out cases where the date of referral is before the date the 
+  # ADA application was received - because those referrals are not relevant to
+  # address the disability request. 2237/3668 rows remain.
+  
+  filter(date_received <= date_referral | is.na(date_referral) | is.na(date_received)) %>%
+  select(pei:date_received, date_decision:date_referral) 
+  
+# I then merge this with information about the shelter characteristics to get
+# the zipcodes of these transfer locations.
+  
+service_provider_ada_transfers_including_zip <- 
+  
+  # I use a left join because I want to keep all of the rows from my ada_transfers
+  # tibble - even if there is no corresponding shelter characteristic information.
+  # This merge will allow me to see whether the location the individual was 
+  # transferred to meets that individual's disability accommodation request.
+  
+  left_join(service_provider_ada_transfers, shelter_characteristics, 
+            by = c("transfer_location" = "name")) %>%
+    
+  # Since a program_to transfer is always followed by a more specific 
+  # entity_to transfer, I can filter program_to transfers out. 
+  # 1972/2237 rows remain.
+  
+  filter(transfer_type_specific != "program_to") %>%
+  rename(zipcode_of_transfer = zip_code) %>%
+  select(pei:date_taken, date_referral, date_acc_met, 
+         days_until_accommodation_met, interesting, shelter_from, hotel_from,
+         req_placement_unit_close_to_service_providers:transfer_location, 
+         zipcode_of_transfer) 
+
+# Because I lack zipcode information for hotels, I manually Googled hotel 
+# names to figure out the correct zipcodes.
+
+hotel_locs <- transfers %>% 
+  filter(transfer_type_specific == "hotel_placement") %>% 
+  select(transfer_location) %>% 
+  distinct() %>%
+  arrange(transfer_location) %>%
+  mutate(zipcode_of_transfer = c("02538", "01730", "02762", "01752", "01801",
+                                 "02135", "02301", "02301", "01840", "01824",
+                                 "01089", "01020", "01906", "01923", "01923", 
+                                 "02747", "02136", "01604", "01301", "01301",
+                                 "01040", "01040", "01453", "01453", "01844", 
+                                 "01760", "02148", "02760", "02446", "01532", 
+                                 "02061", "02108", "02725", "01119", "02703", 
+                                 "02777", "02148", "01013", "02451", "02451", 
+                                 "01581", "02301", "02090", "02188"))
+
+# Include hotel zipcodes.
+
+service_provider_ada_transfers_including_zip <- 
+  left_join(service_provider_ada_transfers_including_zip, hotel_locs, by = "transfer_location") %>% 
+  mutate(zipcode_of_transfer = if_else(is.na(zipcode_of_transfer.x), zipcode_of_transfer.y,
+                                  zipcode_of_transfer.x)) %>% 
+  select(-c(zipcode_of_transfer.x, zipcode_of_transfer.y)) %>%
+  unique() 
+
+# Another intern went through transfer locations without zipcodes and used DHCD
+# vacancy data and Google to deduce the correct zipcodes. Around 15% required
+# some extra corroboration through Google.
+
+caitlin_locs <- read_excel("processed_data/miscellaneous/transfer_locations_with_zips.xlsx") %>%
+  clean_names() %>%
+  select(transfer_location, zip_code) %>%
+  rename(zipcode_of_transfer = zip_code)
+
+# Include Caitlin zipcodes. Only 4 out of 1977 rows are without zipcodes.
+
+service_provider_ada_transfers_including_zip <- 
+  left_join(service_provider_ada_transfers_including_zip, caitlin_locs, by = "transfer_location") %>% 
+  mutate(zipcode_of_transfer = if_else(is.na(zipcode_of_transfer.x), zipcode_of_transfer.y,
+                                  zipcode_of_transfer.x)) %>% 
+  select(-c(zipcode_of_transfer.x, zipcode_of_transfer.y)) %>%
+  unique() 
+
+# Now, we want to calculate the distance between zipcode of provider and 
+# zipcode of transfer to infer whether and when the ADA request has been
+# accommodated. 
+
+service_provider_ada_transfers_including_zip <- 
+  service_provider_ada_transfers_including_zip %>%
+  select(pei:date_received, zipcode_of_transfer, zipcode_of_provider) %>% 
+  mutate(zipcode_of_transfer = str_c(zipcode_of_transfer, ", USA")) %>%
+  mutate(zipcode_of_provider = str_c(zipcode_of_provider, ", USA")) %>% 
+  filter(!is.na(zipcode_of_provider) & !is.na(zipcode_of_transfer)) %>%
+  mutate(dist_btwn_zips = mapdist(zipcode_of_transfer, zipcode_of_provider)[5][[1]]) %>%
+  mutate(time_btwn_zips = mapdist(zipcode_of_transfer, zipcode_of_provider)[7][[1]]) %>% 
+  mutate(acc_met = if_else(dist_btwn_zips < 20, 1, 0)) 
+
+# I then use my previously written function to keep the earliest transfer that 
+# accommodates the request for proximity to a service provider OR the earliest 
+# transfer that doesn't meet the need if the need is never met.
+
+supplemented_service_provider_ada_transfers <- supplement_date_acc_met(service_provider_ada_transfers_including_zip) %>%
+  filter(days_until_accommodation_met >= 0) 
+
+# At the end of this process, we have a table of approved ADA requests
+# for proximity to a service provider including the zipcode of the provider,
+# the zipcode of the earliest transfer that put the individual within 20 miles
+# of the service provider, and the days between when the application was first
+# received and when the accommodation was met. 
+
+# I can create a Kaplan Meier plot to visualize the delays in accommodation
+# for service provider ADA requests.
+
+create_kaplan_meier(supplemented_service_provider_ada_transfers)
+```
+
+
+
+

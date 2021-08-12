@@ -1,0 +1,82 @@
+---
+title: "Vacancy Analysis"
+author: "Monica Chang"
+date: "8/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+```
+
+```{r vacancy analysis}
+
+col_types <- cols(
+  .default = col_character(),
+  FAM = col_double(),
+  BED = col_double(),
+  TODD = col_double(),
+  TWIN = col_double(),
+  BUNK = col_double(),
+  FULL = col_double(),
+  TWINWTRUN = col_double(),
+  BUNKWTRUN = col_double(),
+  TYPE = col_logical(),
+  RESPONSEID_109 = col_logical(),
+  AUDITDATE_109 = col_logical(),
+  DISABLED = col_logical(),
+  LASTRESPONSE = col_logical(),
+  ISACTIVE = col_logical(),
+  REFERRALSTATUS = col_logical(),
+  Date.Created = col_date(format = "")
+)
+
+vacancies <- read_csv(file = "/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/raw_data/VacancyReports_DHCD.csv",
+                      col_types = col_types)
+
+# Note: 29.68% of type values are missing. 
+# Note: Dates go from 12/21/2016 to 12/24/2019 for scattered site units. 
+#       Dates go from 12/06/2016 to 12/24/2019 for the entire dataset.
+
+vacancies_clean <- vacancies %>%
+  clean_names() %>%
+  
+  # Went from 38913 entries to 4453 entries.
+  
+  filter(type == "Scattered Sites") %>%
+  
+  # Went from 4453 entries to 4358 entries. 
+  
+  filter(!is.na(date_created)) %>%
+  
+  # Find the number of scattered site vacancies per month from 12/21/2016 to 12/24/2019
+  
+  mutate(year = year(date_created)) %>%
+  mutate(month = month(date_created)) %>% 
+  group_by(year, month) %>%
+  summarize(total = n(), .groups = "drop") %>%
+  mutate(date = make_date(year, month))
+
+ggplot(vacancies_clean, aes(x = date, y = total)) + 
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_linedraw() +
+  coord_x_date(xlim = c("2015-10-01", "2020-11-01")) +
+  labs(title = "Change in number of scattered site vacancies over time",
+       subtitle = "This displays data for 12/21/2016 to 12/24/2019.",
+       x = "Month",
+       y = "Number of vacancies")
+
+```

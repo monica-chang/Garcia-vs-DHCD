@@ -1,0 +1,163 @@
+---
+title: "ADA Request Plots"
+author: "Monica Chang"
+date: "4/16/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(gt)
+library(readxl)
+library(lubridate)
+library(skimr)
+library(janitor)
+library(rsample)
+library(rstanarm)
+library(tidymodels)
+library(ggmap)
+library(leaflet)
+library(tidyquant)
+```
+
+```{r approved ADA request tables and plots}
+
+all_adas <- read_csv("/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/all_adas.csv")
+approved_adas_complete <- read_csv("/Users/monicachang/Documents*/gbls/project/Garcia-vs-DHCD/processed_data/approved_adas_complete.csv")
+
+# I create a tibble of all requests by pivoting the tibble of all ADA
+# requests longer and renaming the accommodations.
+
+all_requests <- all_adas %>%
+  pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
+               names_to = "accommodation_type", 
+               values_to = "requests") %>%
+  mutate(accommodation_type = recode(accommodation_type, 
+                                     req_placement_unit_close_to_service_providers = "Placement Unit Close to Service Providers",
+                                     req_scattered_site_placement_unit_co_housing_unit = "Scattered Site Placement Unit / Co-housing Unit",
+                                     req_assistance_animal_within_placement_unit = "Assistance Animal within Placement Unit",
+                                     req_first_floor_or_elevator_access = "First Floor or Elevator Access",
+                                     req_non_carpeted_placement_unit = "Non Carpeted Placement Unit",
+                                     req_change_in_ea_regulation_re_housing_plan = "Change in EA Regulation / Re-Housing Plan",
+                                     req_physical_modification_to_placement_unit = "Physical Modification to Placement Unit",
+                                     req_access_to_full_cooking_facilities = "Access to Full Cooking Facilities",
+                                     req_wheelchair_accessible_placement_unit = "Wheelchair Accessible Placement Unit",
+                                     req_assigned_caretaker_temporary_non_ea_household_member = "Assigned Caretaker / Temporary Non-EA Household Member",
+                                     req_additional_bedrooms = "Additional bedrooms",
+                                     req_ac_unit = "AC Unit",
+                                     req_other = "Other")) %>%
+  group_by(accommodation_type) %>%
+  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  arrange(desc(total_requests)) %>%
+  mutate(percent = total_requests/sum(total_requests) * 100)
+
+# I create a tibble of approved requests by pivoting the tibble of all 
+# approved ADA requests longer and renaming the accommodations.
+
+approved_requests <- approved_adas_complete %>%
+  pivot_longer(cols = req_placement_unit_close_to_service_providers:req_assigned_caretaker_temporary_non_ea_household_member, 
+               names_to = "accommodation_type", 
+               values_to = "requests") %>%
+  mutate(accommodation_type = recode(accommodation_type, 
+                                     req_placement_unit_close_to_service_providers = "Placement Unit Close to Service Providers",
+                                     req_scattered_site_placement_unit_co_housing_unit = "Scattered Site Placement Unit / Co-housing Unit",
+                                     req_assistance_animal_within_placement_unit = "Assistance Animal within Placement Unit",
+                                     req_first_floor_or_elevator_access = "First Floor or Elevator Access",
+                                     req_non_carpeted_placement_unit = "Non Carpeted Placement Unit",
+                                     req_change_in_ea_regulation_re_housing_plan = "Change in EA Regulation / Re-Housing Plan",
+                                     req_physical_modification_to_placement_unit = "Physical Modification to Placement Unit",
+                                     req_access_to_full_cooking_facilities = "Access to Full Cooking Facilities",
+                                     req_wheelchair_accessible_placement_unit = "Wheelchair Accessible Placement Unit",
+                                     req_assigned_caretaker_temporary_non_ea_household_member = "Assigned Caretaker / Temporary Non-EA Household Member",
+                                     req_additional_bedrooms = "Additional bedrooms",
+                                     req_ac_unit = "AC Unit",
+                                     req_other = "Other")) %>%
+  group_by(accommodation_type) %>%
+  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  arrange(desc(total_requests)) %>%
+  mutate(percent = total_requests/sum(total_requests) * 100) %>%
+  mutate(percent = round(percent, 2))
+
+saveRDS(approved_requests, file = "shiny/data/approved_requests.rds")
+
+# I use a a left_join to create a merged tibble of all requests and 
+# approved requests for each accommodation type.
+
+requests <- left_join(all_requests, approved_requests, by = "accommodation_type") %>%
+  rename(num_approved_requests = total_requests.y,
+         num_all_requests = total_requests.x) %>%
+  
+  # I create a new column to calculate the percentage of requests that are
+  # approved for each accommodation type.
+  
+  mutate(percent_approved = num_approved_requests/num_all_requests * 100) %>%
+  mutate(percent_approved = round(percent_approved, 2)) %>%
+  select(accommodation_type, num_approved_requests, num_all_requests, percent_approved) 
+
+saveRDS(requests, file = "shiny/data/requests.rds")
+
+# I create a plot that shows the number of requests approved and total for each
+# accommodation type.
+
+requests %>%
+  pivot_longer(num_approved_requests:num_all_requests, names_to = "approved", values_to = "num_requests") %>%
+  ggplot(aes(x = num_requests, y = fct_reorder(accommodation_type, num_requests), fill = approved)) +
+    geom_col(position = "dodge") +
+    theme_bw() +
+    theme(legend.position = "bottom") +
+    scale_fill_discrete(name = "Category", labels = c("All requests", "Approved requests")) +
+    scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Change in regulation/re-housing plan", "Non-carpeted", "First floor/elevator", "Assistance animal",  "Other", "Scattered site/Co-housing", "Service providers")) +
+    labs(title = "Number of requests by accommodation type \nand approval status (2015-2019)",
+         subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
+         x = "Number of requests", 
+         y = "Accommodation type",
+         caption = "Source: Department of Housing & Community Development")
+
+# I create a plot showing approved requests by accommodation type.
+
+approved_requests %>%
+  ggplot(aes(x = percent, y = fct_reorder(accommodation_type, percent))) +
+    geom_col() +
+    theme_bw() +
+    scale_y_discrete(labels = c("Caretaker", "Additional bedrooms", "Change in regulation/re-housing plan", "Wheelchair", "AC Unit", "Cooking facilities", "Physical modification", "Non-carpeted", "Assistance animal", "First floor/elevator",  "Other", "Scattered site/Co-housing", "Service providers")) +
+    labs(title = "Percentage of approved ADA requests \nby accommodation type (2015-2019)",
+         subtitle = "Proximity to service providers and scattered site housing \nwere by far the most frequently requested accommodations.",
+         x = "Percentage of approved requests", 
+         y = "Accommodation type",
+         caption = "Source: Department of Housing & Community Development")
+
+# I create a tibble of reasons for approved ADA requests by pivoting the 
+# tibble of all approved ADA requests longer and renaming the reasons.
+
+approved_reasons <- approved_adas_complete %>%
+  pivot_longer(cols = reason_physical_health:reason_other, 
+               names_to = "reason_type", 
+               values_to = "requests") %>%
+  mutate(reason_type = recode(reason_type, reason_mental_health = "Mental Health", 
+                                           reason_emotional_health = "Emotional Health",
+                                           reason_physical_health = "Physical Health",
+                                           reason_developmental_disability_behavioral = "Developmental Disability/Behavioral Health",
+                                           reason_other = "Other")) %>%
+  group_by(reason_type) %>%
+  summarize(total_requests = sum(requests), .groups = "drop") %>%
+  arrange(desc(total_requests)) %>%
+  mutate(percent = total_requests/sum(total_requests) * 100) %>%
+  mutate(percent = round(percent, 2))
+
+saveRDS(approved_reasons, file = "shiny/data/approved_reasons.rds")
+
+# I create a plot showing approved requests by reason type.
+
+approved_reasons %>%
+  ggplot(aes(x = percent, y = fct_reorder(reason_type, percent))) +
+    geom_col() +
+    theme_linedraw() +
+    scale_y_discrete(labels = c("Other", "Developmental/ \nbehavioral disability", "Emotional health", "Mental health", "Physical health")) +
+    labs(title = "Percentage of approved ADA requests \nby reason type (2015-2019)",
+         subtitle = "Physical health and mental health were the most common reasons for an ADA request.",
+         x = "Percentage of approved requests", 
+         y = "Reason type",
+         caption = "Source: Department of Housing & Community Development")
+
+```
